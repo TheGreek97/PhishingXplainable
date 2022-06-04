@@ -51,12 +51,13 @@ def extract_features(mail):
 
     ## Mail body
     # Suspicious Words
-    # Image Present
-    image_present(images_in_mail)
+
+    image_present(images_in_mail)  # Image Present
     # Link Mismatch
+
     # Special Characters in body
-    # Links Present
-    links_present(links_in_mail)
+    links_present(links_in_mail)  # Links Present
+    # Misspelled words
 
     ## Domain Based
     # Age of Domain
@@ -67,34 +68,29 @@ def extract_features(mail):
     for link in links_in_mail:
         href_link = get_link_in_anchor(link)
         if href_link != "":
-            # No HTTPS
-            https = has_https(href_link)
+            https = has_https(href_link)  # No HTTPS
             # Self-signed HTTPS certificate
 
-            # Special Chars in URL
-            spec_chars = special_chars(href_link)
-            # Sensitive words in URL
-
-            # IP address
-            ip_address = is_ip_address(href_link)
-            if not ip_address: # avoid calculating some url features
-                # TLD mis-positioned
-                tld_mis_pos = is_tld_mispositioned(href_link)
-                # Out of position Brand name
-                brand_mis_pos = True
-                # Number of sub-domains
-                num_subdomains = number_subdomains(href_link)
+            spec_chars = special_chars(href_link)  # Special Chars in URL
+            sensitive_words_url = sensitive_words_in_url(href_link)  # Sensitive words in URL
+            ip_address = is_ip_address(href_link)  # IP address
+            if not ip_address:  # avoid calculating some url features
+                tld_mis_pos = is_tld_mispositioned(href_link)  # TLD mis-positioned
+                brand_name_mis_pos = is_brand_name_mispositioned(href_link)  # Out of position Brand name
+                num_subdomains = number_subdomains(href_link)  # Number of sub-domains
             else:
                 tld_mis_pos = False
                 brand_mis_pos = False
                 num_subdomains = 0
             # URL Length
-            # URL is shortened
+
+            url_shortened = is_url_shortened (href_link)  # URL is shortened
             # Free domain
 
 
+
 def get_link_in_anchor(a_tag):
-    href_link = re.search(r'href=[\"|\'][^mailto].*[\"|\']', a_tag)
+    href_link = re.search(r'href=[\"|\'][^mailto].*[\"|\']', a_tag,  re.IGNORECASE)
     if href_link:
         href_link = re.split('=', href_link.group(0))
         return href_link[1]
@@ -111,7 +107,7 @@ def links_present(links):
 
 
 def has_https(link):
-    match = re.match(r'^[\"|\']?https:', link)
+    match = re.match(r'^[\"|\']?https:', link, re.IGNORECASE)
     return match is not None
 
 
@@ -134,6 +130,17 @@ def special_chars(link):
     return char_counts
 
 
+def sensitive_words_in_url(link):
+    sensitive_words = ["secure", "webscr", "login", "account", "ebay", "signin", "banking", "confirm"]
+    words_regex = ''
+    for i, w in enumerate (sensitive_words):
+        words_regex += w
+        if i < len(sensitive_words)-1:
+            words_regex += "|"
+    matches = re.findall(words_regex, link, re.IGNORECASE)
+    return len(matches)
+
+
 def is_ip_address(link):
     match = re.match(r'([\d]{1,3}\.){3}[\d]{1,3}', link)
     return match is not None
@@ -147,8 +154,13 @@ def is_tld_mispositioned(link):
     if domain is not None:
         tokens = domain.group(0).split('.')[:-2]
         for subdomain in tokens:
-            if subdomain in common_tld:
+            if subdomain.lower() in common_tld:
                 return True
+    return False
+
+
+def is_brand_name_mispositioned(link):
+    #TODO how to implement this??
     return False
 
 
@@ -159,6 +171,18 @@ def number_subdomains(link):
     else:
         tokens = domain.group(0).split('.')
         return len(tokens[:-2])
+
+
+def is_url_shortened(link):
+    # Top 12 used URL Shortener services https://blog.hootsuite.com/what-are-url-shorteners/
+    services = ["ow.ly", "t.co", "bit.ly", 'tinyurl', 'tiny.cc', 'bit.do', 'shorte.st', 'cut.ly']
+    words_regex = ''
+    for i, w in enumerate(services):
+        words_regex += w
+        if i < len(services) - 1:
+            words_regex += "|"
+    match = re.match(words_regex, link, re.IGNORECASE)
+    return match is not None
 
 
 if __name__ == '__main__':
