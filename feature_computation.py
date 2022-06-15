@@ -4,9 +4,10 @@
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 
 # regex for URL detection http[s]?:\/\/.*\s
-import os
 import re
 from html.parser import HTMLParser
+import utils.ssl_cert
+import utils.alexa_rank
 
 
 def get_anchors(mail):
@@ -41,61 +42,60 @@ def get_link_in_anchor(a_tag):
     return ""
 
 
+def get_hostname(url):
+    regex = r'^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)'
+    match = re.search(regex, url, re.IGNORECASE)
+    if match and match.group(1):
+        hostname = match.group(1)
+        return hostname
+    else:
+        return ""
+
+
+def get_links_plain_text (mail_text):
+    regex = r'(https?:\/\/)?(www\.)[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/=]*)'
+    iter_reg = re.finditer(regex, mail_text, re.IGNORECASE)
+    links = [a.group(0) for a in iter_reg]
+    return links
+
+
 def extract_features(mail):
-    links_in_mail = get_anchors(mail)
+    anchors_in_mail = get_anchors(mail)
     images_in_mail = get_images(mail)
     # buttons_in_mail = get_buttons(mail)
+    links_plain_text = []
+    email_is_html = True
+
+    if len(anchors_in_mail) < 1:
+        links_plain_text = get_links_plain_text(mail)
+        if len(links_plain_text) < 1:
+            # print(mail)
+            return False
+        else:
+            email_is_html = False
 
     ## Mail body
     sus_words_body = suspicious_words_body(mail)  # Suspicious Words
     img_in_body = image_present(images_in_mail)  # Image Present
     special_chars_body = spec_chars_body(mail)  # TODO: Special Characters in body
-    links_present_mail = links_present(links_in_mail)  # Links Present
+    links_present_mail = links_present(mail)  # Links Present
     # TODO Misspelled words
 
-    ## TODO: Domain Based
-    age_of_domain = 0  # TODO: Age of Domain
-    expiration = 0  # TODO: Expiration
-    ranking = 0  # TODO: Ranking
-
-    ## URL
-    urls_features = []
-    for link in links_in_mail:
-        href_link = get_link_in_anchor(link)
-        if href_link != "":
-            https = has_https(href_link)  # No HTTPS
-            self_signed_https = False  # TODO: Self-signed HTTPS certificate
-            spec_chars = special_chars(href_link)  # Special Chars in URL
-            sensitive_words_url = sensitive_words_in_url(href_link)  # Sensitive words in URL
-            ip_address = is_ip_address(href_link)  # IP address
-            if not ip_address:  # avoid calculating some url features
-                tld_mis_pos = is_tld_mispositioned(href_link)  # TLD mis-positioned
-                brand_name_mis_pos = is_brand_name_mispositioned(href_link)  # Out of position Brand name
-                num_subdomains = number_subdomains(href_link)  # Number of sub-domains
-                url_shortened = is_url_shortened(href_link)  # URL is shortened
-            else:  # These 4 features might cause a bias maybe? I want the model to ignore them
-                tld_mis_pos = None
-                brand_name_mis_pos = None
-                num_subdomains = None
-                url_shortened = None
-            link_mismatch = link_mismatch_a(link)  # Link Mismatch
-            url_length = get_url_length(href_link)  # URL Length
-            free_domain = False  # TODO: Free domain
-
-            url_feats = {
-                "has_https": https,
-                "self_signed_https": self_signed_https,
-                "spec_chars": spec_chars,
-                "sensitive_words_url": sensitive_words_url,
-                "tld_mis_pos": tld_mis_pos,
-                "brand_name_mis_pos": brand_name_mis_pos,
-                "num_subdomains": num_subdomains,
-                "url_shortened": url_shortened,
-                "link_mismatch": link_mismatch,
-                "url_length": url_length,
-                "free_domain": free_domain
-            }
-            urls_features.append(url_feats)
+    if email_is_html:
+        ## URL
+        urls_features = []
+        for link in anchors_in_mail:
+            href_link = get_link_in_anchor(link)
+            if href_link != "":
+                url_feats = get_url_features(href_link, link)
+                urls_features.append(url_feats)
+    else:
+        ## URL
+        urls_features = []
+        for link in links_plain_text:
+            if link != "":
+                url_feats = get_url_features(link)
+                urls_features.append(url_feats)
 
     return {
         "sus_words_body": sus_words_body,
@@ -103,12 +103,57 @@ def extract_features(mail):
         "special_chars_body": special_chars_body,
         "links_present_mail": links_present_mail,
 
-        "age_of_domain": age_of_domain,
-        "expiration": expiration,
-        "ranking": ranking,
-
         "urls_features": urls_features
     }
+
+
+def get_url_features(link, visible_link=""):
+    hostname = get_hostname(link)
+    ##  Domain Based
+    age_of_domain = 0  # TODO: Age of Domain
+    expiration = 0  # TODO: Expiration
+    ranking = 0  # = utils.alexa_rank.getRank(hostname)
+
+    https = has_https(link)  # No HTTPS
+    self_signed_https = False  # = self_signed_HTTPS(link, hostname) Non-valid SSL certificate
+    spec_chars = special_chars(link)  # Special Chars in URL
+    sensitive_words_url = sensitive_words_in_url(link)  # Sensitive words in URL
+    ip_address = is_ip_address(link)  # IP address
+    if not ip_address:  # avoid calculating some url features
+        tld_mis_pos = is_tld_mispositioned(link)  # TLD mis-positioned
+        brand_name_mis_pos = is_brand_name_mispositioned(link)  # Out of position Brand name
+        num_subdomains = number_subdomains(link)  # Number of sub-domains
+        url_shortened = is_url_shortened(link)  # URL is shortened
+    else:  # These 4 features might cause a bias maybe? I want the model to ignore them
+        tld_mis_pos = None
+        brand_name_mis_pos = None
+        num_subdomains = None
+        url_shortened = None
+    if visible_link != "":
+        link_mismatch = link_mismatch_a(visible_link)  # Link Mismatch
+    else:
+        link_mismatch = False
+    url_length = get_url_length(link)  # URL Length
+    free_domain = False  # TODO: Free domain
+
+    url_features = {
+        "has_https": https,
+        "self_signed_https": self_signed_https,
+        "spec_chars": spec_chars,
+        "sensitive_words_url": sensitive_words_url,
+        "tld_mis_pos": tld_mis_pos,
+        "brand_name_mis_pos": brand_name_mis_pos,
+        "num_subdomains": num_subdomains,
+        "url_shortened": url_shortened,
+        "link_mismatch": link_mismatch,
+        "url_length": url_length,
+        "free_domain": free_domain,
+        "age_of_domain": age_of_domain,
+        "expiration": expiration,
+        "ranking": ranking
+    }
+
+    return url_features
 
 
 def suspicious_words_body(mail):
@@ -128,9 +173,11 @@ def image_present(images):
 
 
 def spec_chars_body(mail):
+    print (mail)
+    # SEPARATE THE BODY FROM THE EMAIL (Not with <body> tag, since a lot of the mails are in plain-text, maybe something like \n\n?)
     parser = HTMLParser()
     body = parser.feed(mail)
-    # print(body)
+    print(body)
     """
     body = re.search(r'<\s*body\s*>.*<\s*/body\s*>', mail, re.IGNORECASE)
     if body is not None:
@@ -244,5 +291,12 @@ def get_url_length(link):
     return len(link)
 
 
-if __name__ == '__main__':
-    spam_assassin()
+def self_signed_HTTPS(url, hostname):
+    # print (url)
+    if has_https(url):
+        port = 443
+        cert = utils.ssl_cert.get_certificate(hostname, port)
+        valid_cert = utils.ssl_cert.verify_cert(cert, hostname)
+        return not valid_cert
+    else:
+        return False

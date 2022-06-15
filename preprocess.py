@@ -1,6 +1,6 @@
 import os
 import pandas
-import feature_extraction as fe
+import feature_computation as fe
 import json
 import math
 
@@ -16,23 +16,19 @@ def enron_dataset():
         print("DATASET: ", dataset)
         for index, row in df.iterrows():
             mail = row['Message']
-            if not pandas.isnull(mail) and mail != "":
+            if not pandas.isnull(mail) and mail != "" and index < 5:
                 filename = filename_class + str(index) + ".json"
                 print(filename)
                 features = fe.extract_features(mail)
-                features["class"] = item_class  # PHISHING
-                feature_path = 'datasets\\features'
-                try:
-                    with open(os.path.join(feature_path, filename), 'x') as output:
-                        output.write(json.dumps(features))
-                except FileExistsError:
-                    with open(os.path.join(feature_path, filename), 'w') as output:
-                        output.write(json.dumps(features))
-        """with open(os.path.join(base_path, dataset), mode='r', encoding='utf-8', errors='ignore') as csv_file:
-            mails = csv.reader(csv_file)
-            for mail in mails:
-                mail = mail[5]  # read csv: [Date,FromName,FromAddress,To,Subject,Message]
-        """
+                if features:
+                    features["class"] = item_class  # PHISHING
+                    feature_path = 'datasets\\features'
+                    try:
+                        with open(os.path.join(feature_path, filename), 'x') as output:
+                            output.write(json.dumps(features))
+                    except FileExistsError:
+                        with open(os.path.join(feature_path, filename), 'w') as output:
+                            output.write(json.dumps(features))
 
 
 def spam_assassin_dataset():
