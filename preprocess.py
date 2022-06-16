@@ -16,7 +16,7 @@ def enron_dataset():
         print("DATASET: ", dataset)
         for index, row in df.iterrows():
             mail = row['Message']
-            if not pandas.isnull(mail) and mail != "" and 150 < index:
+            if not pandas.isnull(mail) and mail != "":
                 filename = filename_class + str(index) + ".json"
                 print(filename)
                 features = fe.extract_features(mail)
@@ -56,6 +56,6 @@ def write_feature_file(file_path, features):
 
 
 if __name__ == '__main__':
-    # enron_dataset()
-    # spam_assassin_dataset('easy_ham')
+    enron_dataset()
+    spam_assassin_dataset('easy_ham')
     spam_assassin_dataset('hard_ham')

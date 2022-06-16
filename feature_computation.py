@@ -5,6 +5,7 @@
 
 # regex for URL detection http[s]?:\/\/.*\s
 import re
+import math
 import utils.ssl_cert
 import utils.alexa_rank
 from html.parser import HTMLParser
@@ -20,7 +21,7 @@ def extract_features(mail):
     links_plain_text = []
     email_is_html = True
 
-    if len(anchors_in_mail) < 1:
+    if len(anchors_in_mail) < 1:  # If there's no link in the mail, don't compute the features
         links_plain_text = get_links_plain_text(mail)
         if len(links_plain_text) < 1:
             # print(mail)
@@ -35,30 +36,38 @@ def extract_features(mail):
     links_present_mail = links_present(mail)  # Links Present
     no_misspelled_words = misspelled_words(mail)  # Misspelled words
 
+    url_features = None
     if email_is_html:
         ## URL
-        urls_features = []
+        max_score_phish = -1
         for link in anchors_in_mail:
             href_link = get_link_in_anchor(link)
             if href_link != "":
-                url_feats = get_url_features(href_link, link)
-                urls_features.append(url_feats)
+                url_feats, new_score = get_url_features(href_link, visible_link=link, max_score_phish=max_score_phish)
+                if new_score > max_score_phish:
+                    max_score_phish = new_score
+                    url_features = url_feats  # urls_features.append(url_feats)
     else:
         ## URL
-        urls_features = []
+        max_score_phish = -1
         for link in links_plain_text:
             if link != "":
-                url_feats = get_url_features(link)
-                urls_features.append(url_feats)
+                url_feats, new_score = get_url_features(link, max_score_phish=max_score_phish)
+                if new_score > max_score_phish:
+                    max_score_phish = new_score
+                    url_features = url_feats
 
-    return {
-        "sus_words_body": sus_words_body,
-        "img_in_body": img_in_body,
-        "special_chars_body": special_chars_body,
-        "links_present_mail": links_present_mail,
-        "no_misspelled_words": no_misspelled_words,
-        "urls_features": urls_features
-    }
+    if url_features is not None:
+        body_features = {
+            "sus_words_body": sus_words_body,
+            "img_in_body": img_in_body,
+            "special_chars_body": special_chars_body,
+            "links_present_mail": links_present_mail,
+            "no_misspelled_words": no_misspelled_words
+        }
+        return body_features | url_features  # merge the 2 dictionaries
+    else:
+        return False
 
 
 def get_anchors(mail):
@@ -110,22 +119,35 @@ def get_links_plain_text (mail_text):
     return links
 
 
-def get_url_features(link, visible_link=""):
-    ##  Domain Based
+def get_url_features(link, visible_link="", max_score_phish=0):
+    score = 0
     hostname = get_hostname(link)
-    age_of_domain, expiration = whois_info(link)  # Age of Domain, Expiration
-    ranking = utils.alexa_rank.getRank(hostname)
 
     https = has_https(link)  # No HTTPS
-    self_signed_https = False  # = self_signed_HTTPS(link, hostname) Non-valid SSL certificate
-    spec_chars = special_chars(link)  # Special Chars in URL
-    sensitive_words_url = sensitive_words_in_url(link)  # Sensitive words in URL
+    score = score + 1 if not https else score
+
+    self_signed_https = self_signed_HTTPS(link, hostname)  # Non-valid SSL certificate
+    score = score + 1 if self_signed_https else score
+
+    spec_chars, no_spec_chars_url = special_chars(link)  # Special Chars in URL
+    increase = math.floor(no_spec_chars_url / 5)  # increase the score by 1 for each 4 special chars in the URL
+    increase = increase if increase < 5 else 5  # (max increase is 4)
+    score = score + increase
+
+    sensitive_words_url = no_sensitive_words_in_url(link)  # Sensitive words in URL
+    score = score + sensitive_words_url
+
     ip_address = is_ip_address(link)  # IP address
+    score = score + 3 if ip_address else score
+
     if not ip_address:  # avoid calculating some url features
         url_shortened = is_url_shortened(link)  # URL is shortened
+        score = score + 2 if url_shortened else score
         if not url_shortened:
             tld_mis_pos = is_tld_mispositioned(link)  # TLD mis-positioned
+            score = score + 1 if tld_mis_pos else score
             num_subdomains = number_subdomains(link)  # Number of sub-domains
+            score = score + 1 if num_subdomains > 1 else score
         else:
             tld_mis_pos = False
             num_subdomains = 1
@@ -133,27 +155,41 @@ def get_url_features(link, visible_link=""):
         tld_mis_pos = None
         num_subdomains = None
         url_shortened = None
+
     if visible_link != "":
         link_mismatch = link_mismatch_a(visible_link)  # Link Mismatch
+        score = score + 1 if link_mismatch else score
     else:
         link_mismatch = False
+
     url_length = get_url_length(link)  # URL Length
+    increase = math.floor(url_length / 50)  # increase the score by 1 for each 50 chars in the URL
+    increase = increase if increase < 5 else 5  # (max increase is 4)
+    score = score + increase
+
+    # Domain-Based
+    age_of_domain, expiration = whois_info(link)  # Age of Domain (in days), Days until Expiration
+    score = score + 1 if age_of_domain < 200 else score  # increase score if the domain is less than 200 days old
+    score = score + 1 if expiration < 100 else score  # increase score if domain is expiring in less than 100 days
+
+    ranking = utils.alexa_rank.getRank(hostname)
+    score = score + 1 if ranking > 20000 else score  # increase score if the Alexa ranking is more than 20k
 
     url_features = {
-        "has_https": https,
-        "self_signed_https": self_signed_https,
-        "spec_chars": spec_chars,
-        "sensitive_words_url": sensitive_words_url,
-        "tld_mis_pos": tld_mis_pos,
-        "num_subdomains": num_subdomains,
+        "url_has_https": https,
+        "url_self_signed_https": self_signed_https,
+        "url_spec_chars": spec_chars,
+        "url_sensitive_words": sensitive_words_url,
+        "url_tld_mis_pos": tld_mis_pos,
+        "url_num_subdomains": num_subdomains,
         "url_shortened": url_shortened,
-        "link_mismatch": link_mismatch,
+        "url_link_mismatch": link_mismatch,
         "url_length": url_length,
-        "age_of_domain": age_of_domain,
-        "expiration": expiration,
-        "ranking": ranking
+        "url_age_of_domain": age_of_domain,
+        "url_domain_expiration": expiration,
+        "url_ranking": ranking
     }
-    return url_features
+    return url_features, score
 
 
 def suspicious_words_body(mail):
@@ -205,18 +241,21 @@ def whois_info(url):
         if w is not None:
             exp_date = w.expiration_date
             creat_date = w.creation_date  # datetime.strptime(w.creation_date, "%Y-%m-%d %H:%M:%S")
-            if exp_date is None:
-                exp_date = datetime.now()
+            if exp_date is not None:
+                exp_date = exp_date - datetime.now()
+                exp_date = exp_date.days
+            else:
+                exp_date = 0
             if creat_date is None:
                 creat_date = datetime.now()
             age_of_domain = datetime.now() - creat_date
             age_of_domain = age_of_domain.days
         else:
             age_of_domain = 0
-            exp_date = datetime.now()
+            exp_date = 0
         return age_of_domain, exp_date
     except:
-        return 0, datetime.now()
+        return 0, 0
 
 
 def has_https(link):
@@ -235,14 +274,16 @@ def special_chars(link):
         'unicode_chars': {'reg': r'[^\x00-\x7F]+'},
         'digits': {'reg': r'\d'},
     }
+    tot_number_spec_chars = 0
     for key, char in special_chars_dictionary.items():  # This can be optimized by building a single regex
         # print(key, char['reg'])
         matches = re.findall(char['reg'], link)
         char_counts[key] = len(matches)
-    return char_counts
+        tot_number_spec_chars += len(matches)
+    return char_counts, tot_number_spec_chars
 
 
-def sensitive_words_in_url(link):
+def no_sensitive_words_in_url(link):
     sensitive_words = ["secure", "webscr", "login", "account", "ebay", "signin", "banking", "confirm"]
     words_regex = ''
     for i, w in enumerate (sensitive_words):
