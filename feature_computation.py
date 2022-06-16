@@ -5,10 +5,12 @@
 
 # regex for URL detection http[s]?:\/\/.*\s
 import re
-from html.parser import HTMLParser
 import utils.ssl_cert
 import utils.alexa_rank
-
+from html.parser import HTMLParser
+from datetime import datetime
+from whois import whois
+from spellchecker import SpellChecker
 
 def get_anchors(mail):
     anchors_regex = r'<a[^>]*href\s*=\s*((\'[^\']*\')|(\"[^"]*\")).*>[^<]*<\s*\/a\s*>'
@@ -77,9 +79,9 @@ def extract_features(mail):
     ## Mail body
     sus_words_body = suspicious_words_body(mail)  # Suspicious Words
     img_in_body = image_present(images_in_mail)  # Image Present
-    special_chars_body = spec_chars_body(mail)  # TODO: Special Characters in body
+    special_chars_body = spec_chars_body(mail)  # Special Characters in body
     links_present_mail = links_present(mail)  # Links Present
-    # TODO Misspelled words
+    no_misspelled_words = misspelled_words(mail)  # Misspelled words
 
     if email_is_html:
         ## URL
@@ -102,16 +104,14 @@ def extract_features(mail):
         "img_in_body": img_in_body,
         "special_chars_body": special_chars_body,
         "links_present_mail": links_present_mail,
-
+        "no_misspelled_words": no_misspelled_words,
         "urls_features": urls_features
     }
 
 
 def get_url_features(link, visible_link=""):
-    hostname = get_hostname(link)
     ##  Domain Based
-    age_of_domain = 0  # TODO: Age of Domain
-    expiration = 0  # TODO: Expiration
+    age_of_domain, expiration = whois_info(link)  # Age of Domain, Expiration
     ranking = 0  # = utils.alexa_rank.getRank(hostname)
 
     https = has_https(link)  # No HTTPS
@@ -120,13 +120,15 @@ def get_url_features(link, visible_link=""):
     sensitive_words_url = sensitive_words_in_url(link)  # Sensitive words in URL
     ip_address = is_ip_address(link)  # IP address
     if not ip_address:  # avoid calculating some url features
-        tld_mis_pos = is_tld_mispositioned(link)  # TLD mis-positioned
-        brand_name_mis_pos = is_brand_name_mispositioned(link)  # Out of position Brand name
-        num_subdomains = number_subdomains(link)  # Number of sub-domains
         url_shortened = is_url_shortened(link)  # URL is shortened
-    else:  # These 4 features might cause a bias maybe? I want the model to ignore them
+        if not url_shortened:
+            tld_mis_pos = is_tld_mispositioned(link)  # TLD mis-positioned
+            num_subdomains = number_subdomains(link)  # Number of sub-domains
+        else:
+            tld_mis_pos = False
+            num_subdomains = 1
+    else:  # The features that are set to default values might cause a bias? I want the model to ignore them
         tld_mis_pos = None
-        brand_name_mis_pos = None
         num_subdomains = None
         url_shortened = None
     if visible_link != "":
@@ -134,7 +136,6 @@ def get_url_features(link, visible_link=""):
     else:
         link_mismatch = False
     url_length = get_url_length(link)  # URL Length
-    free_domain = False  # TODO: Free domain
 
     url_features = {
         "has_https": https,
@@ -142,17 +143,14 @@ def get_url_features(link, visible_link=""):
         "spec_chars": spec_chars,
         "sensitive_words_url": sensitive_words_url,
         "tld_mis_pos": tld_mis_pos,
-        "brand_name_mis_pos": brand_name_mis_pos,
         "num_subdomains": num_subdomains,
         "url_shortened": url_shortened,
         "link_mismatch": link_mismatch,
         "url_length": url_length,
-        "free_domain": free_domain,
         "age_of_domain": age_of_domain,
         "expiration": expiration,
         "ranking": ranking
     }
-
     return url_features
 
 
@@ -172,25 +170,43 @@ def image_present(images):
     return len(images) > 0
 
 
+def misspelled_words(mail):
+    spell = SpellChecker()
+    body = get_mail_body(mail)
+    body = re.sub(r'([!\?,\.\(\)><#£$€\[\]@:;\"\-\/_\\+]|^\x00-\x7F)', " ", body)
+    words_in_mail = re.split(r'\s+', body)
+    unknown_words = spell.unknown(words_in_mail)
+    for w in ['', 'www', 'http', 'https']:  # remove some words
+        try:
+            unknown_words.remove(w)
+        except KeyError:
+            continue
+    return len(unknown_words)
+
+
 def spec_chars_body(mail):
-    print (mail)
-    # SEPARATE THE BODY FROM THE EMAIL (Not with <body> tag, since a lot of the mails are in plain-text, maybe something like \n\n?)
-    parser = HTMLParser()
-    body = parser.feed(mail)
-    print(body)
-    """
-    body = re.search(r'<\s*body\s*>.*<\s*/body\s*>', mail, re.IGNORECASE)
-    if body is not None:
-        mail = body
-    count = 0
-    spec_chars_regex = r'[^\x00-\x7F]+'
-    matches = re.findall(spec_chars_regex, mail)
-    count += len(matches)
-    return count"""
+    body = get_mail_body(mail)
+    matches_spec_chars = re.findall(r'[.,!?@\\:£$€\/\-;\*%\+_]', body)
+    matches_unicode_chars = re.findall(r'[^\x00-\x7F]', body)
+    count = len(matches_spec_chars) + len(matches_unicode_chars)
+    return count
 
 
 def links_present(links):
     return len(links) > 0
+
+
+def whois_info(url):
+    w = whois(url)
+    if w is not None:
+        exp_date = w.expiration_date
+        creat_date = w.creation_date  # datetime.strptime(w.creation_date, "%Y-%m-%d %H:%M:%S")
+        age_of_domain = datetime.now() - creat_date
+        age_of_domain = age_of_domain.days
+    else:
+        age_of_domain = 0
+        exp_date = datetime.now()
+    return age_of_domain, exp_date
 
 
 def has_https(link):
@@ -199,7 +215,6 @@ def has_https(link):
 
 
 def special_chars(link):
-    # TODO: test unicode
     char_counts = {}
     special_chars_dictionary = {
         'slashes': {'reg': r'/'},
@@ -243,11 +258,6 @@ def is_tld_mispositioned(link):
         for subdomain in tokens:
             if subdomain.lower() in common_tld:
                 return True
-    return False
-
-
-def is_brand_name_mispositioned(link):
-    #TODO how to implement this??
     return False
 
 
@@ -300,3 +310,14 @@ def self_signed_HTTPS(url, hostname):
         return not valid_cert
     else:
         return False
+
+
+def get_mail_body(mail):
+    parser = HTMLParser()
+    body = parser.feed(mail)
+    if body is None:
+        body = mail
+    splits = re.split(r"X-FileName:.*\n", body, 2)
+    if len(splits) > 1:
+        body = splits[1]
+    return body

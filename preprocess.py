@@ -16,7 +16,7 @@ def enron_dataset():
         print("DATASET: ", dataset)
         for index, row in df.iterrows():
             mail = row['Message']
-            if not pandas.isnull(mail) and mail != "" and index < 5:
+            if not pandas.isnull(mail) and mail != "" and 8 < index < 15:
                 filename = filename_class + str(index) + ".json"
                 print(filename)
                 features = fe.extract_features(mail)
@@ -25,10 +25,10 @@ def enron_dataset():
                     feature_path = 'datasets\\features'
                     try:
                         with open(os.path.join(feature_path, filename), 'x') as output:
-                            output.write(json.dumps(features))
+                            output.write(json.dumps(features, sort_keys=True, default=str))
                     except FileExistsError:
                         with open(os.path.join(feature_path, filename), 'w') as output:
-                            output.write(json.dumps(features))
+                            output.write(json.dumps(features, sort_keys=True, default=str))
 
 
 def spam_assassin_dataset():
