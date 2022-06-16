@@ -12,54 +12,6 @@ from datetime import datetime
 from whois import whois
 from spellchecker import SpellChecker
 
-def get_anchors(mail):
-    anchors_regex = r'<a[^>]*href\s*=\s*((\'[^\']*\')|(\"[^"]*\")).*>[^<]*<\s*\/a\s*>'
-    anchors = re.finditer(anchors_regex, mail, re.IGNORECASE)
-    tags = [a.group(0) for a in anchors]
-    return tags
-
-
-def get_images(mail):
-    # regex = r'<img\s*[^>]*src\s*=\s?[\'|\"][^\'|\"]*[\'|\"]\s*/?>'
-    regex = r'<img[^>]*>'
-    imgs = re.findall(regex, mail, re.IGNORECASE)
-    return imgs
-
-
-def get_buttons(mail):
-    regex = r'<button\s*[^>]*onclick\s*=\s?[\'|\"]*[^>]*>.*<\/button>'
-    btns = re.findall(regex, mail, re.IGNORECASE)
-    return btns
-
-
-def get_link_in_anchor(a_tag):
-    href_link = re.search(r'href\s*=\s*((\'[^\']*\')|(\"[^"]*\"))', a_tag,  re.IGNORECASE)
-    # href=[\"|\'][^mailto].*[\"|\']
-    if href_link:
-        href_link = re.split('=', href_link.group(0))
-        link = href_link[1]
-        is_mailto = re.search(r'mailto:', link, re.IGNORECASE)
-        if is_mailto is None:
-            return link
-    return ""
-
-
-def get_hostname(url):
-    regex = r'^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)'
-    match = re.search(regex, url, re.IGNORECASE)
-    if match and match.group(1):
-        hostname = match.group(1)
-        return hostname
-    else:
-        return ""
-
-
-def get_links_plain_text (mail_text):
-    regex = r'(https?:\/\/)?(www\.)[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/=]*)'
-    iter_reg = re.finditer(regex, mail_text, re.IGNORECASE)
-    links = [a.group(0) for a in iter_reg]
-    return links
-
 
 def extract_features(mail):
     anchors_in_mail = get_anchors(mail)
@@ -109,10 +61,60 @@ def extract_features(mail):
     }
 
 
+def get_anchors(mail):
+    anchors_regex = r'<a[^>]*href\s*=\s*((\'[^\']*\')|(\"[^"]*\")).*>[^<]*<\s*\/a\s*>'
+    anchors = re.finditer(anchors_regex, mail, re.IGNORECASE)
+    tags = [a.group(0) for a in anchors]
+    return tags
+
+
+def get_images(mail):
+    # regex = r'<img\s*[^>]*src\s*=\s?[\'|\"][^\'|\"]*[\'|\"]\s*/?>'
+    regex = r'<img[^>]*>'
+    imgs = re.findall(regex, mail, re.IGNORECASE)
+    return imgs
+
+
+def get_buttons(mail):
+    regex = r'<button\s*[^>]*onclick\s*=\s?[\'|\"]*[^>]*>.*<\/button>'
+    btns = re.findall(regex, mail, re.IGNORECASE)
+    return btns
+
+
+def get_link_in_anchor(a_tag):
+    href_link = re.search(r'href\s*=\s*((\'[^\']*\')|(\"[^"]*\"))', a_tag,  re.IGNORECASE)
+    # href=[\"|\'][^mailto].*[\"|\']
+    if href_link:
+        href_link = re.split('=', href_link.group(0))
+        link = href_link[1]
+        is_mailto = re.search(r'mailto:', link, re.IGNORECASE)
+        if is_mailto is None:
+            return link
+    return ""
+
+
+def get_hostname(url):
+    regex = r'^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)'
+    match = re.search(regex, url, re.IGNORECASE)
+    if match and match.group(1):
+        hostname = match.group(1)
+        return hostname
+    else:
+        return ""
+
+
+def get_links_plain_text (mail_text):
+    regex = r'(https?:\/\/)?(www\.)[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/=]*)'
+    iter_reg = re.finditer(regex, mail_text, re.IGNORECASE)
+    links = [a.group(0) for a in iter_reg]
+    return links
+
+
 def get_url_features(link, visible_link=""):
     ##  Domain Based
+    hostname = get_hostname(link)
     age_of_domain, expiration = whois_info(link)  # Age of Domain, Expiration
-    ranking = 0  # = utils.alexa_rank.getRank(hostname)
+    ranking = utils.alexa_rank.getRank(hostname)
 
     https = has_https(link)  # No HTTPS
     self_signed_https = False  # = self_signed_HTTPS(link, hostname) Non-valid SSL certificate
@@ -197,16 +199,24 @@ def links_present(links):
 
 
 def whois_info(url):
-    w = whois(url)
-    if w is not None:
-        exp_date = w.expiration_date
-        creat_date = w.creation_date  # datetime.strptime(w.creation_date, "%Y-%m-%d %H:%M:%S")
-        age_of_domain = datetime.now() - creat_date
-        age_of_domain = age_of_domain.days
-    else:
-        age_of_domain = 0
-        exp_date = datetime.now()
-    return age_of_domain, exp_date
+    url = url.lower()
+    try:
+        w = whois(url)
+        if w is not None:
+            exp_date = w.expiration_date
+            creat_date = w.creation_date  # datetime.strptime(w.creation_date, "%Y-%m-%d %H:%M:%S")
+            if exp_date is None:
+                exp_date = datetime.now()
+            if creat_date is None:
+                creat_date = datetime.now()
+            age_of_domain = datetime.now() - creat_date
+            age_of_domain = age_of_domain.days
+        else:
+            age_of_domain = 0
+            exp_date = datetime.now()
+        return age_of_domain, exp_date
+    except:
+        return 0, datetime.now()
 
 
 def has_https(link):

@@ -1,4 +1,4 @@
-Return-Path: <owner-linux-xfs@oss.sgi.com>
+﻿Return-Path: <owner-linux-xfs@oss.sgi.com>
 Received: from oss.sgi.com (oss.sgi.com [128.167.58.27])
 	by eclectic.kluge.net (8.11.6/8.11.6) with ESMTP id g7H7BVC31814
 	for <felicity@kluge.net>; Sat, 17 Aug 2002 03:11:32 -0400
