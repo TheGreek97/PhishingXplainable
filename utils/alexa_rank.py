@@ -20,12 +20,11 @@ def getRank(url):
     url = opr_url + "?domains[]=" + url + ""
     response = requests.get(url, headers={"API-OPR": "gs48s8sgko4cgkkcogkc8gsg0s0o40s8kg84wkss"})
     response = json.loads(response.text)
-    if response["status_code"] == 200:
-        rank = response["response"][0]["rank"]
-        if rank is not None:
-            global_rank = int(rank)
-        else:
-            global_rank = 999999999
-    else:
-        global_rank = 999999999
-    return global_rank
+    try:
+        if response["status_code"] == 200:
+            rank = response["response"][0]["rank"]
+            if rank is not None and rank != "":
+                return int(rank)
+    except KeyError:
+        print("error in response:", response)
+    return 99999999

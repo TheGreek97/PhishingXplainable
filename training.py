@@ -10,7 +10,13 @@ from sklearn import preprocessing
 
 
 def load(path):
-    return pd.read_csv(path)
+    dfs = []  # an empty list to store the data frames
+    for file in path:
+        data = pd.read_json(file, lines=True)  # read data frame from json file
+        dfs.append(data)  # append the data frame to the list
+
+    dataframe = pd.concat(dfs, ignore_index=True)  # concatenate all the data frames in the list.
+    return dataframe
 
 
 def stratifiedKFold(data_x, data_y, n_folds, seed):
@@ -69,7 +75,8 @@ def determineDecisionTreekFoldConfiguration(x_train, x_val, y_train, y_val, seed
 
 
 if __name__ == '__main__':
-    training = load('trainDdosLabelNumeric.csv')
+    training = load('datasets\\features\\enron')
+
     seed = 42
     np.random.seed(seed)
 

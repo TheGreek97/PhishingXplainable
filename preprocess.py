@@ -33,6 +33,7 @@ def spam_assassin_dataset(folder):
     dataset_path = os.path.join(base_path, folder)
     mails = os.listdir(dataset_path)
     for i, m in enumerate(mails):
+        # if i > 126:
         filename = folder+"_legit_" + str(i) + ".json"
         print(filename)
         file_path = os.path.join(dataset_path, m)
