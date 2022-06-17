@@ -1,19 +1,28 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.model_selection import StratifiedKFold
 import sklearn.tree as Tree
+import os
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import classification_report
 from sklearn import preprocessing
+from sklearn.model_selection import train_test_split
 
 
-def load(path):
+def load_data():
     dfs = []  # an empty list to store the data frames
-    for file in path:
-        data = pd.read_json(file, lines=True)  # read data frame from json file
-        dfs.append(data)  # append the data frame to the list
+
+    for path in ['datasets\\features\\enron', 'datasets\\features\\spam_assassin']:
+        for file in os.listdir(path):
+            file_path = os.path.join(path, file)
+            data_ = pd.read_json(file_path, lines=True)  # read data frame from json file
+            try:
+                data_.iat[0, 16] = sum(data_.iat[0, 16].values())
+                dfs.append(data_)  # append the data frame to the list
+            except IndexError:
+                print("Ignoring ", file)
 
     dataframe = pd.concat(dfs, ignore_index=True)  # concatenate all the data frames in the list.
     return dataframe
@@ -75,43 +84,37 @@ def determineDecisionTreekFoldConfiguration(x_train, x_val, y_train, y_val, seed
 
 
 if __name__ == '__main__':
-    training = load('datasets\\features\\enron')
-
     seed = 42
     np.random.seed(seed)
 
-    print("Shape :", training.shape)
-    cols = list(training.columns.values)
-    independentList = cols[0:training.shape[1] - 1]
-    x = training.loc[:, independentList]
-    y = training['Label']  # The class
+    data = load_data()
+    # training = data.sample(frac=0.8, random_state=42)
+    # testing = data.drop(training.index)
+    x_data = data.drop('class', axis='columns')
+    y_data = data.iloc[:, :1]  # The class
+    x_training, x_test, y_training, y_test = train_test_split(x_data, y_data, stratify=y_data, test_size=0.2)
 
+    print("Shape :", x_training.shape)
+    print(x_data.head())
     # - Stratified K-Fold
-    n_folds = 5
-    x_train, x_val, y_train, y_val = stratifiedKFold(data_x=x, data_y=y, n_folds=n_folds, seed=seed)
-
-    # - Compute tree with an arbitrary value for criterion and ccp_alpha
-    T = decisionTreeLearner(x, y, seed=0, criterion='entropy', ccp_alpha=0.01)
-    showTree(T)
+    # n_folds = 5
+    # x_train_v, x_val, y_train_v, y_val = stratifiedKFold(data_x=x_training, data_y=y_training, n_folds=n_folds, seed=seed)
 
     # - Compute the best values for cpp_alpha and criterion
-    #best_f1, best_alpha, best_criterion = determineDecisionTreekFoldConfiguration(x_train, x_val, y_train, y_val, seed)
-    #print(f"Best f1: {best_f1}")
-    #print(best_alpha, best_criterion)
+    # best_f1, best_alpha, best_criterion = determineDecisionTreekFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
+    # print(f"Best f1: {best_f1}")
+    # print(best_alpha, best_criterion)
 
-    best_alpha = 0.001
+    best_alpha = 0.002
     best_criterion = 'entropy'
 
-    tree = decisionTreeLearner(x, y, seed, best_criterion, best_alpha)
+    tree = decisionTreeLearner(x_training, y_training, seed, best_criterion, best_alpha)
+    showTree(tree)
 
     # --Testing
-    test = load('testDdosLabelNumeric.csv')
-    x_test = test.loc[:, independentList]
-    y_test = test['Label']  # The class
-
     predictions = tree.predict(x_test)
     cf_mat = confusion_matrix(y_test, predictions)
-    display = ConfusionMatrixDisplay(cf_mat)
+    display = ConfusionMatrixDisplay(cf_mat, display_labels=["Legit", "Phishing"])
     display.plot()
     plt.show()
     print(classification_report(y_test, predictions))
