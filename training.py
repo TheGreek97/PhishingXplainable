@@ -144,7 +144,7 @@ def determineRFkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
                 for min_samples_split in [10, 25, 50, 100]:  # The min. observations in any node to split it
                     for max_leaf_nodes in [5, 15, 25, 35]:  # The max. leaves in a tree
                         for min_samples_leaf in [10, 25, 50, 100]:  # The min. samples in a leaf after a split
-                            for max_features in [3, 7, 10, 14, 18]:
+                            for max_features in [3, 7, 10, 14, 17]:
                                 for max_samples in max_samples_values:
                                     print(f"Computing n={n}, max_depth={max_depth}, min_sample_split={min_samples_split}, "
                                           f"max_leaf_nodes={max_leaf_nodes}, min_samples_leaf={min_samples_leaf}, "
@@ -187,7 +187,7 @@ if __name__ == '__main__':
     np.random.seed(seed)
 
     data = load_data()
-    feature_names = data.columns
+    feature_names = data.columns[1:]  # first is the class
     x_data = data.drop('class', axis='columns')
     y_data = data.iloc[:, :1]  # The class
     x_training, x_test, y_training, y_test = train_test_split(x_data, y_data, stratify=y_data, test_size=0.2)
@@ -198,17 +198,22 @@ if __name__ == '__main__':
     n_folds = 5
     x_train_v, x_val, y_train_v, y_val = stratifiedKFold(data_x=x_training, data_y=y_training, n_folds=n_folds, seed=seed)
 
+    # LIME
+    explainer = lime_tabular.LimeTabularExplainer(x_training.values, mode="classification",
+                                                  class_names=['Legit', 'Phishing'],
+                                                  feature_names=feature_names)
+
     # --- DECISION TREE ----
     # best_alpha_tree, best_criterion_tree = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
     best_alpha_tree = 0.002
     best_criterion_tree = 'entropy'
-    T = tree.DecisionTreeClassifier(criterion=best_criterion_tree, ccp_alpha=best_alpha_tree, random_state=seed)
-    T.fit(x_training, y_training)
+    dt_model = tree.DecisionTreeClassifier(criterion=best_criterion_tree, ccp_alpha=best_alpha_tree, random_state=seed)
+    dt_model.fit(x_training, y_training)
     # showTree(T)
-    predictions_tree = T.predict(x_test)
-    displayConfusionMatrix(y_test,predictions_tree, "Decision Tree")
+    predictions_tree = dt_model.predict(x_test)
+    displayConfusionMatrix(y_test, predictions_tree, "Decision Tree")
     with open(os.path.join('output', 'decision_tree.obj'), 'wb') as file:
-        pickle.dump(T, file)
+        pickle.dump(dt_model, file)
     # print("Tree:", classification_report(y_test, predictions))
 
     # --- SVM ----
@@ -216,10 +221,11 @@ if __name__ == '__main__':
     best_parameters_svm = {"kernel": 'poly', "c": 1, "gamma": 0.1, "tol": 0.01, "degree": 5}
     svm_model = make_pipeline(StandardScaler(), svm.SVC(gamma=best_parameters_svm['gamma'], tol=best_parameters_svm['tol'],
                                                         coef0=best_parameters_svm['c'], degree=best_parameters_svm['degree'],
-                                                        kernel=best_parameters_svm['kernel'], random_state=seed))
+                                                        kernel=best_parameters_svm['kernel'], random_state=seed,
+                                                        probability=True))
     svm_model.fit(x_training, y_training.values.ravel())
     with open(os.path.join('output', 'svm.obj'), 'wb') as file:
-        pickle.dump(T, file)
+        pickle.dump(svm_model, file)
     predictions_svm = svm_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_svm, "SVM")
 
@@ -236,17 +242,38 @@ if __name__ == '__main__':
                                       ccp_alpha=best_alpha_tree, criterion=best_criterion_tree, random_state=seed)
     rf_model.fit(x_training, y_training.values.ravel())
     with open(os.path.join('output', 'random_forest.obj'), 'wb') as file:
-        pickle.dump(T, file)
+        pickle.dump(rf_model, file)
     predictions_rf = rf_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_rf, "RF")
 
-    """
-    explainer = lime_tabular.LimeTabularExplainer(x_training, mode="classification",
-                                                  class_names=['Legit', 'Phishing'],
-                                                  feature_names=feature_names,
-                                                  )
-    explanation = explainer.explain_instance(x_test[0], rf_model.predict_proba, num_features=len(feature_names))
-    with plt.style.context("ggplot"):
-        explanation.as_pyplot_figure()
-    print(explanation.as_list())"""
+    # LIME Explanations
+    instance_to_explain = x_test.iloc[0]
 
+    explanation_dt = explainer.explain_instance(instance_to_explain, dt_model.predict_proba,
+                                                num_features=len(feature_names))
+    explanation_figure = explanation_dt.as_pyplot_figure()
+    explanation_figure.set_size_inches(20, 18)
+    explanation_figure.set_dpi(100)
+    plt.title("Explanation DT")
+    plt.show()
+    print(explanation_dt.as_list())
+
+    explanation_svm = explainer.explain_instance(instance_to_explain, svm_model.predict_proba,
+                                                 num_features=len(feature_names))
+    explanation_figure = explanation_svm.as_pyplot_figure()
+    explanation_figure.set_size_inches(20, 18)
+    explanation_figure.set_dpi(100)
+    plt.title("Explanation SVM")
+    plt.show()
+    print(explanation_svm.as_list())
+
+    explanation_rf = explainer.explain_instance(instance_to_explain, rf_model.predict_proba,
+                                                num_features=len(feature_names))
+    explanation_figure = explanation_rf.as_pyplot_figure()
+    explanation_figure.set_size_inches(20, 18)
+    explanation_figure.set_dpi(100)
+    plt.title("Explanation RF")
+    plt.show()
+    predictions_instance = rf_model.predict_proba(instance_to_explain.values.reshape(1, -1))
+    print(f"Predictions: Legit = {predictions_instance[0]}%, Phishing = {predictions_instance[1]}%")
+    print(explanation_rf.as_list())
