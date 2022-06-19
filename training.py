@@ -20,21 +20,25 @@ from sklearn.model_selection import train_test_split
 from lime import lime_tabular
 
 
-def load_data():
+def load_data(test_size=0.2, seed=0):
     dfs = []  # an empty list to store the data frames
 
-    for path in ['datasets\\features\\enron', 'datasets\\features\\spam_assassin']:
-        for file in os.listdir(path):
-            file_path = os.path.join(path, file)
+    for path in [os.path.join('datasets', 'features', 'enron'), os.path.join('datasets', 'features', 'spam_assassin')]:
+        for f in os.listdir(path):
+            file_path = os.path.join(path, f)
             data_ = pd.read_json(file_path, lines=True)  # read data frame from json file
             try:
                 data_.iat[0, 16] = sum(data_.iat[0, 16].values())
                 dfs.append(data_)  # append the data frame to the list
             except IndexError:
-                print("Ignoring ", file)
+                print("Ignoring ", f)
 
     dataframe = pd.concat(dfs, ignore_index=True)  # concatenate all the data frames in the list.
-    return dataframe
+    feature_names = dataframe.columns[1:]  # first is the class
+    x_data = dataframe.drop('class', axis='columns')
+    y_data = dataframe.iloc[:, :1]  # The class
+    x_tr, y_tr, x_tst, y_tst = train_test_split(x_data, y_data, stratify=y_data, test_size=test_size, random_state=seed)
+    return x_tr, y_tr, x_tst, y_tst, feature_names
 
 
 def stratifiedKFold(data_x, data_y, n_folds, seed):
@@ -186,22 +190,13 @@ if __name__ == '__main__':
     seed = 42
     np.random.seed(seed)
 
-    data = load_data()
-    feature_names = data.columns[1:]  # first is the class
-    x_data = data.drop('class', axis='columns')
-    y_data = data.iloc[:, :1]  # The class
-    x_training, x_test, y_training, y_test = train_test_split(x_data, y_data, stratify=y_data, test_size=0.2)
+    x_training, x_test, y_training, y_test, feature_names = load_data(test_size=0.2, seed=seed)
     # print("Shape :", x_training.shape)
     # print(x_data.head())
 
     # - Stratified K-Fold
     n_folds = 5
     x_train_v, x_val, y_train_v, y_val = stratifiedKFold(data_x=x_training, data_y=y_training, n_folds=n_folds, seed=seed)
-
-    # LIME
-    explainer = lime_tabular.LimeTabularExplainer(x_training.values, mode="classification",
-                                                  class_names=['Legit', 'Phishing'],
-                                                  feature_names=feature_names)
 
     # --- DECISION TREE ----
     # best_alpha_tree, best_criterion_tree = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
@@ -245,35 +240,3 @@ if __name__ == '__main__':
         pickle.dump(rf_model, file)
     predictions_rf = rf_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_rf, "RF")
-
-    # LIME Explanations
-    instance_to_explain = x_test.iloc[0]
-
-    explanation_dt = explainer.explain_instance(instance_to_explain, dt_model.predict_proba,
-                                                num_features=len(feature_names))
-    explanation_figure = explanation_dt.as_pyplot_figure()
-    explanation_figure.set_size_inches(20, 18)
-    explanation_figure.set_dpi(100)
-    plt.title("Explanation DT")
-    plt.show()
-    print(explanation_dt.as_list())
-
-    explanation_svm = explainer.explain_instance(instance_to_explain, svm_model.predict_proba,
-                                                 num_features=len(feature_names))
-    explanation_figure = explanation_svm.as_pyplot_figure()
-    explanation_figure.set_size_inches(20, 18)
-    explanation_figure.set_dpi(100)
-    plt.title("Explanation SVM")
-    plt.show()
-    print(explanation_svm.as_list())
-
-    explanation_rf = explainer.explain_instance(instance_to_explain, rf_model.predict_proba,
-                                                num_features=len(feature_names))
-    explanation_figure = explanation_rf.as_pyplot_figure()
-    explanation_figure.set_size_inches(20, 18)
-    explanation_figure.set_dpi(100)
-    plt.title("Explanation RF")
-    plt.show()
-    predictions_instance = rf_model.predict_proba(instance_to_explain.values.reshape(1, -1))
-    print(f"Predictions: Legit = {predictions_instance[0]}%, Phishing = {predictions_instance[1]}%")
-    print(explanation_rf.as_list())

@@ -17,7 +17,6 @@ from spellchecker import SpellChecker
 def extract_features(mail):
     anchors_in_mail = get_anchors(mail)
     images_in_mail = get_images(mail)
-    # buttons_in_mail = get_buttons(mail)
     links_plain_text = []
     email_is_html = True
 
@@ -123,8 +122,8 @@ def get_url_features(link, visible_link="", max_score_phish=0):
     score = 0
     hostname = get_hostname(link)
 
-    https = has_https(link)  # No HTTPS
-    score = score + 1 if not https else score
+    no_https = not has_https(link)  # No HTTPS
+    score = score + 1 if no_https else score
 
     self_signed_https = self_signed_HTTPS(link, hostname)  # Non-valid SSL certificate
     score = score + 1 if self_signed_https else score
@@ -176,7 +175,7 @@ def get_url_features(link, visible_link="", max_score_phish=0):
     score = score + 1 if ranking > 20000 else score  # increase score if the Alexa ranking is more than 20k
 
     url_features = {
-        "url_has_https": https,
+        "url_no_https": no_https,
         "url_self_signed_https": self_signed_https,
         "url_spec_chars": spec_chars,
         "url_sensitive_words": sensitive_words_url,
@@ -200,8 +199,9 @@ def suspicious_words_body(mail):
         words_regex += w
         if i < len(suspicious_words) - 1:
             words_regex += "|"
-    match = re.match(words_regex, mail, re.IGNORECASE)
-    return match is not None
+    match = re.findall(words_regex, mail, re.IGNORECASE)
+    count = len(match)
+    return count
 
 
 def image_present(images):
@@ -231,7 +231,7 @@ def spec_chars_body(mail):
 
 
 def links_present(links):
-    return len(links) > 0
+    return len(links)
 
 
 def whois_info(url):
