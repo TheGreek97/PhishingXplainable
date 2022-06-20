@@ -60,7 +60,8 @@ if __name__ == "__main__":
 
     warnings.filterwarnings(action='ignore', category=UserWarning)
 
-    # Decision tree feature importance using CART algorithm
+    # Decision tree feature importance based on the Gini index (Gini importance)
+    # Importance of a feature is computed as the (normalized) total reduction of the criterion brought by that feature.
     importance = dt_model.feature_importances_
     # summarize feature importance
     for i, v in enumerate(importance):

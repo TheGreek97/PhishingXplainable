@@ -1,38 +1,39 @@
 import pandas as pd
 import numpy as np
-
 import os.path
 import pickle
-
 import matplotlib.pyplot as plt
+import pydotplus
+import graphviz
+
 import sklearn.tree as tree
 import sklearn.svm as svm
-import graphviz
-import pydotplus
+from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import f1_score
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import classification_report
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+
 from data import load_data, stratifiedKFold
 
 
 def showTree(model, feature_names):
-    """plt.figure(figsize=(200, 20))
+    plt.figure(figsize=(200, 20))
     tree.plot_tree(model)
     print("Number of nodes:", model.tree_.node_count)
     print("Number of leaves:", model.get_n_leaves())
-    plt.show()"""
-    output_filepath = os.path.join('output', 'decision_tree.png')
+    plt.show()
+    output_filepath = os.path.join('output', 'decision_tree.dot')
     dot_data = tree.export_graphviz(model, out_file=None,
                                     feature_names=feature_names,
                                     class_names=["Legit", "Phishing"],
                                     filled=True, rounded=True,
                                     special_characters=True)
-    graph = pydotplus.graphviz.graph_from_dot_data(dot_data)
-    graph.write_png(output_filepath)
-    return graph
+    # graph = pydotplus.graphviz.graph_from_dot_data(dot_data)
+    # graph.write_png(output_filepath)
+    # return graph
 
 
 def decisionTreeF1(x, y, model):
@@ -105,6 +106,49 @@ def determineSVMkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights
                             best_degree = degree
                             best_score = avg_score
     return {"kernel": best_kernel, "c": best_c, "gamma": best_gamma, "degree": best_degree, "tol": best_tol}
+
+
+# Logistic Regression Hyper-parameter tuning
+def determineLRkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0):
+    best_solver = 'lbfgs'
+    best_c = 10
+    best_penalty = 'l2'
+    best_score = 0
+    n_folds = len(x_train)
+    for solver in ["newton-cg", "lbfgs", "liblinear", "sag", "saga"]:
+        if solver in {'newton-cg', "lbfgs", "sag"}:
+            penalties = ['l2', 'none']
+        elif solver == "saga":
+            penalties = ['elasticnet', 'l1', 'l2', 'none']
+        else:  # liblinear
+            penalties = ['l1', 'l2']
+
+        for penalty in penalties:
+            if penalty == 'elasticnet':
+                l1_ratios = [0, 0.25, 0.5, 0.75, 1]
+            else:
+                l1_ratios = [None]
+            if penalty == 'none':
+                cs = [1]
+            else:
+                cs = [10, 1.0, 0.1, 0.01]
+            for l1_ratio in l1_ratios:
+                for c in cs:
+                    scores = [0, 0, 0, 0, 0]
+                    print(f"Computing solver={solver}, penalty={penalty}, C={c}")
+                    for k in range(0, n_folds):
+                        model = LogisticRegression(solver=solver, penalty=penalty, C=c, class_weight=class_weights,
+                                                   random_state=seed, l1_ratio=l1_ratio)
+                        model.fit(x_train[k], y_train[k].values.ravel())
+                        scores[k] = model.score(x_val[k], y_val[k].values.ravel())
+                    avg_score = sum(scores) / n_folds
+                    print(avg_score)
+                    if avg_score > best_score:
+                        best_solver = solver
+                        best_c = c
+                        best_penalty = penalty
+                        best_score = avg_score
+    return {"solver": best_solver, "c": best_c, "penalty": best_penalty}
 
 
 # Random Forest Hyper-parameter tuning
@@ -203,13 +247,14 @@ if __name__ == '__main__':
                                            ccp_alpha=best_alpha_tree,
                                            random_state=seed,
                                            class_weight=class_weights)
+    
     dt_model.fit(x_training, y_training)
     showTree(dt_model, feature_names)
     predictions_tree = dt_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_tree, "Decision Tree")
     saveModel(dt_model, 'decision_tree')
     # print("Tree:", classification_report(y_test, predictions))
-
+    
     # --- SVM ----
     # best_parameters_svm = determineSVMkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
     # print(best_parameters_svm)
@@ -250,4 +295,13 @@ if __name__ == '__main__':
     displayConfusionMatrix(y_test, predictions_rf, "RF")
     saveModel(rf_model, 'random_forest')
 
-    # TODO: Logistic regression?
+    # --- Logistic Regression ---
+    # best_parameters_lr = determineLRkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
+    best_parameters_lr = {"solver": 'liblinear', "c": 1, "penalty": 'l1'}
+    print(best_parameters_lr)
+    lr_model = LogisticRegression(solver=best_parameters_lr["solver"], penalty=best_parameters_lr["penalty"],
+                                  C=best_parameters_lr["c"], class_weight=class_weights, random_state=seed)
+    lr_model.fit(x_training, y_training.values.ravel())
+    predictions_lr = lr_model.predict(x_test)
+    displayConfusionMatrix(y_test, predictions_lr, "LR")
+    saveModel(lr_model, 'logistic_regression')
