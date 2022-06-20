@@ -17,11 +17,10 @@ from spellchecker import SpellChecker
 def extract_features(mail):
     anchors_in_mail = get_anchors(mail)
     images_in_mail = get_images(mail)
-    links_plain_text = []
+    links_plain_text = get_links_plain_text(mail)
     email_is_html = True
 
     if len(anchors_in_mail) < 1:  # If there's no link in the mail, don't compute the features
-        links_plain_text = get_links_plain_text(mail)
         if len(links_plain_text) < 1:
             # print(mail)
             return False
@@ -32,7 +31,7 @@ def extract_features(mail):
     sus_words_body = suspicious_words_body(mail)  # Suspicious Words
     img_in_body = image_present(images_in_mail)  # Image Present
     special_chars_body = spec_chars_body(mail)  # Special Characters in body
-    links_present_mail = links_present(mail)  # Links Present
+    links_present_mail = len(links_plain_text)  # Links Present
     no_misspelled_words = misspelled_words(mail)  # Misspelled words
 
     url_features = None
@@ -112,9 +111,11 @@ def get_hostname(url):
 
 
 def get_links_plain_text (mail_text):
-    regex = r'(https?:\/\/)?(www\.)[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/=]*)'
+    # regex = r'(https?:\/\/)?(www\.)[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/=]*)'
+    regex = r'((https?:\/\/)|(www\.))[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/=]*)'
     iter_reg = re.finditer(regex, mail_text, re.IGNORECASE)
-    links = [a.group(0) for a in iter_reg]
+    img_extension = ('.gif', '.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp', '.eps')
+    links = [a.group(0) for a in iter_reg if not a.group(0).endswith(img_extension)]
     return links
 
 
@@ -167,11 +168,16 @@ def get_url_features(link, visible_link="", max_score_phish=0):
     score = score + increase
 
     # Domain-Based
-    age_of_domain, expiration = whois_info(link)  # Age of Domain (in days), Days until Expiration
+    if score > max_score_phish - 2:  # to avoid computing too many costly features
+        age_of_domain, expiration = whois_info(link)  # Age of Domain (in days), Days until Expiration
+        ranking = utils.alexa_rank.getRank(hostname)
+    else:  # dummy values
+        age_of_domain = 9999999
+        expiration = 99999999
+        ranking = 20000
     score = score + 1 if age_of_domain < 200 else score  # increase score if the domain is less than 200 days old
     score = score + 1 if expiration < 100 else score  # increase score if domain is expiring in less than 100 days
 
-    ranking = utils.alexa_rank.getRank(hostname)
     score = score + 1 if ranking > 20000 else score  # increase score if the Alexa ranking is more than 20k
 
     url_features = {
@@ -186,7 +192,8 @@ def get_url_features(link, visible_link="", max_score_phish=0):
         "url_length": url_length,
         "url_age_of_domain": age_of_domain,
         "url_domain_expiration": expiration,
-        "url_ranking": ranking
+        "url_ranking": ranking,
+        "url_ip_address": ip_address
     }
     return url_features, score
 
@@ -372,3 +379,12 @@ def get_mail_body(mail):
     if len(splits) > 1:
         body = splits[1]
     return body
+
+
+def compute_links_in_mail_feature(mail):
+    anchors_in_mail = get_anchors(mail)
+    links_plain_text = get_links_plain_text(mail)
+    if len(anchors_in_mail) < 1:  # If there's no link in the mail, don't compute the features
+        if len(links_plain_text) < 1:
+            return False
+    return len(links_plain_text)

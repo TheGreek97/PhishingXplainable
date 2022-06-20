@@ -1,11 +1,52 @@
 import matplotlib.pyplot as plt
 from lime import lime_tabular
-from training import load_data
+from matplotlib import pyplot
+
+from data import load_data
 import warnings
-from sklearn.exceptions import DataConversionWarning
 
 import os
 import pickle
+
+
+def load_model(file_name):
+    with open(os.path.join('output', file_name), 'rb') as file:
+        return pickle.load(file)
+
+
+def show_explanation(explanation, title=""):
+    explanation_figure = explanation.as_pyplot_figure()
+    explanation_figure.set_size_inches(20, 18)
+    explanation_figure.set_dpi(100)
+    plt.title(title)
+    plt.show()
+
+
+def explain(explainer, instance_to_explain, model, num_features):
+    explanation = explainer.explain_instance(instance_to_explain, model.predict_proba, num_features=num_features)
+    pred = model.predict_proba(instance_to_explain.values.reshape(1, -1))
+    print(f"Predictions: Legit = {pred[0][0]}, Phishing = {pred[0][1]}")
+    print(explanation.as_list())
+
+    return explanation, pred
+
+
+def explain_without_features(explainer, instance_to_explain, model, explanation, num_features, features_to_remove=2, val=1):
+    tmp = instance_to_explain.copy()
+    for i in range(0, features_to_remove):
+        most_relevant_feature = explanation.as_list()[i][0].split(' ')[0]
+        tmp.at[most_relevant_feature] = val
+    return explain(explainer, instance_to_explain, model, num_features)
+
+
+def save_explanation_to_file(explanation, file_name, folder_name=None):
+    base_path = os.path.join('output', 'explanations')
+    if folder_name is not None:
+        base_path = os.path.join(base_path, folder_name)
+        if not os.path.exists(base_path):
+            os.makedirs(base_path)
+    explanation.save_to_file(os.path.join(base_path, file_name+".html"))
+
 
 if __name__ == "__main__":
     # Load data
@@ -13,71 +54,50 @@ if __name__ == "__main__":
     x_training, x_test, y_training, y_test, feature_names = load_data(test_size=0.2, seed=seed)
 
     # Load models
-    with open(os.path.join('output', 'decision_tree.obj'), 'rb') as file:
-        dt_model = pickle.load(file)
-    with open(os.path.join('output', 'svm.obj'), 'rb') as file:
-        svm_model = pickle.load(file)
-    with open(os.path.join('output', 'random_forest.obj'), 'rb') as file:
-        rf_model = pickle.load(file)
+    dt_model = load_model('decision_tree.obj')
+    svm_model = load_model('svm.obj')
+    rf_model = load_model('random_forest.obj')
 
     warnings.filterwarnings(action='ignore', category=UserWarning)
 
-    # LIME
-    explainer = lime_tabular.LimeTabularExplainer(x_training.values, mode="classification",
-                                                  class_names=['Legit', 'Phishing'],
-                                                  feature_names=feature_names)
+    # Decision tree feature importance using CART algorithm
+    importance = dt_model.feature_importances_
+    # summarize feature importance
+    for i, v in enumerate(importance):
+        print('Feature: %0d (%s), Score: %.5f' % (i, feature_names[i], v))
+    # plot feature importance
+    pyplot.bar([x for x in range(len(importance))], importance)
+    pyplot.show()
 
-    # LIME Explanations
-    instance_to_explain = x_test.iloc[0]
-    """
-    # DECISION TREE
-    explanation_dt = explainer.explain_instance(instance_to_explain, dt_model.predict_proba,
-                                                num_features=len(feature_names))
-    explanation_figure = explanation_dt.as_pyplot_figure()
-    explanation_figure.set_size_inches(20, 18)
-    explanation_figure.set_dpi(100)
-    plt.title("Explanation DT")
-    # plt.show()
-    print(explanation_dt.as_list())
+    # LIME Explanations for single instances of the test set
+    lime_explainer = lime_tabular.LimeTabularExplainer(x_training.values, mode="classification",
+                                                       class_names=['Legit', 'Phishing'],
+                                                       feature_names=feature_names)
+    for i in range(0, 0):
+        instance = x_test.iloc[i]
+        real_class = 'Legit (0)' if y_test.iloc[i].item() == 0 else 'Phishing (1)'
+        print("Instance " + str(i) + f" - Real class: {real_class}")
 
-    # SVM
-    explanation_svm = explainer.explain_instance(instance_to_explain, svm_model.predict_proba,
-                                                 num_features=len(feature_names))
-    explanation_figure = explanation_svm.as_pyplot_figure()
-    explanation_figure.set_size_inches(20, 18)
-    explanation_figure.set_dpi(100)
-    plt.title("Explanation SVM")
-    # plt.show()
-    print(explanation_svm.as_list())
-    """
+        folder_name = str(i)+"_"+str(y_test.iloc[i].item())
+        # DECISION TREE
+        explanation_dt, _ = explain(lime_explainer, instance, dt_model, len(feature_names))
+        # show_explanation(explanation_dt, "Explanation DT")
+        save_explanation_to_file(explanation_dt, 'decision_tree', folder_name=folder_name)
 
-    # RANDOM FOREST
-    explanation_rf = explainer.explain_instance(instance_to_explain, rf_model.predict_proba,
-                                                num_features=len(feature_names))
-    """explanation_figure = explanation_rf.as_pyplot_figure()
-    explanation_figure.set_size_inches(20, 18)
-    explanation_figure.set_dpi(100)
-    plt.title("Explanation RF")
-    plt.show()"""
-    predictions_instance = rf_model.predict_proba(instance_to_explain.values.reshape(1, -1))
-    print(explanation_rf.as_list())
-    explanation_rf.save_to_file(os.path.join('output', 'explanations', 'random_forest_explanation.html'))
+        # SVM
+        explanation_svm, _ = explain(lime_explainer, instance, svm_model, len(feature_names))
+        # show_explanation(explanation_svm, "Explanation SVM")
+        save_explanation_to_file(explanation_svm, 'svm', folder_name=folder_name)
 
-    #
+        # RANDOM FOREST
+        explanation_rf, predictions_instance = explain(lime_explainer, instance, rf_model, len(feature_names))
+        # show_explanation(explanation_rf, "Explanation RF")
+        save_explanation_to_file(explanation_rf, 'random_forest', folder_name=folder_name)
+        print("\n")
 
-    tmp = instance_to_explain.copy()
-    for i in range(0, 3):
-        most_relevant_feature = explanation_rf.as_list()[i][0].split(' ')[0]
-        tmp.at[most_relevant_feature] = 1
-
-    explanation_rf_1 = explainer.explain_instance(tmp, rf_model.predict_proba,
-                                                  num_features=len(feature_names))
-    tmp_pred = rf_model.predict_proba(tmp.values.reshape(1, -1))
-    print(explanation_rf_1.as_list())
-    print(f"Real class: {'Legit (0)' if y_test.iloc[0].item() == 0 else 'Phishing (1)'}")
-
-    print(f"Predictions: Legit = {predictions_instance[0][0]}, Phishing = {predictions_instance[0][1]}")
-    print(f'Predictions with some changes in features: Legit = {tmp_pred[0][0]}, Phishing = {tmp_pred[0][1]}')
-    print('Difference:', predictions_instance[0] - tmp_pred[0])
-
-    explanation_rf_1.save_to_file(os.path.join('output', 'explanations', 'random_forest_explanation_1.html'))
+    # explanation_rf_1, predictions_instance_1 = explain_without_features(lime_explainer, instance,
+    #                                                                    rf_model, explanation_rf,
+    #                                                                    num_features=len(feature_names),
+    #                                                                    features_to_remove=3)
+    # save_explanation_to_file(explanation_rf_1, 'random_forest_1')
+    # print('Difference:', predictions_instance[0] - predictions_instance_1[0])

@@ -1,66 +1,38 @@
 import pandas as pd
 import numpy as np
 
-import os
+import os.path
 import pickle
 
 import matplotlib.pyplot as plt
 import sklearn.tree as tree
 import sklearn.svm as svm
-
+import graphviz
+import pydotplus
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import classification_report
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-
-from lime import lime_tabular
+from data import load_data, stratifiedKFold
 
 
-def load_data(test_size=0.2, seed=0):
-    dfs = []  # an empty list to store the data frames
-
-    for path in [os.path.join('datasets', 'features', 'enron'), os.path.join('datasets', 'features', 'spam_assassin')]:
-        for f in os.listdir(path):
-            file_path = os.path.join(path, f)
-            data_ = pd.read_json(file_path, lines=True)  # read data frame from json file
-            try:
-                data_.iat[0, 16] = sum(data_.iat[0, 16].values())
-                dfs.append(data_)  # append the data frame to the list
-            except IndexError:
-                print("Ignoring ", f)
-
-    dataframe = pd.concat(dfs, ignore_index=True)  # concatenate all the data frames in the list.
-    feature_names = dataframe.columns[1:]  # first is the class
-    x_data = dataframe.drop('class', axis='columns')
-    y_data = dataframe.iloc[:, :1]  # The class
-    x_tr, y_tr, x_tst, y_tst = train_test_split(x_data, y_data, stratify=y_data, test_size=test_size, random_state=seed)
-    return x_tr, y_tr, x_tst, y_tst, feature_names
-
-
-def stratifiedKFold(data_x, data_y, n_folds, seed):
-    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
-    x_train_array = []
-    x_test_array = []
-    y_train_array = []
-    y_test_array = []
-    for train_index, test_index in skf.split(data_x, data_y):
-        x_train_array.append(data_x.iloc[train_index])
-        x_test_array.append(data_x.iloc[test_index])
-        y_train_array.append(data_y.iloc[train_index])
-        y_test_array.append(data_y.iloc[test_index])
-    return x_train_array, x_test_array, y_train_array, y_test_array
-
-
-def showTree(model):
-    plt.figure(figsize=(200, 20))
+def showTree(model, feature_names):
+    """plt.figure(figsize=(200, 20))
     tree.plot_tree(model)
     print("Number of nodes:", model.tree_.node_count)
     print("Number of leaves:", model.get_n_leaves())
-    plt.show()
+    plt.show()"""
+    output_filepath = os.path.join('output', 'decision_tree.png')
+    dot_data = tree.export_graphviz(model, out_file=None,
+                                    feature_names=feature_names,
+                                    class_names=["Legit", "Phishing"],
+                                    filled=True, rounded=True,
+                                    special_characters=True)
+    graph = pydotplus.graphviz.graph_from_dot_data(dot_data)
+    graph.write_png(output_filepath)
+    return graph
 
 
 def decisionTreeF1(x, y, model):
@@ -69,17 +41,20 @@ def decisionTreeF1(x, y, model):
 
 
 # Decision Tree Hyper-parameter tuning
-def determineDTkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
+def determineDTkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0 ):
     best_criterion = 'gini'
     best_alpha = 0
     best_f1 = 0
     n_folds = len(x_train)
     for criterion in ['gini', 'entropy']:
-        for alpha in np.arange(0, 0.5, 0.001):
+        for alpha in np.arange(0, 0.2, 0.001):
             f1_scores = [0, 0, 0, 0, 0]
             print(f"Computing criterion={criterion}, alpha={alpha}")
             for k in range(0, n_folds):
-                t = tree.DecisionTreeClassifier(criterion=criterion, ccp_alpha=alpha, random_state=seed)
+                t = tree.DecisionTreeClassifier(criterion=criterion,
+                                                ccp_alpha=alpha,
+                                                random_state=seed,
+                                                class_weight=class_weights)
                 t.fit(x_train[k], y_train[k])
                 f1_scores[k] = decisionTreeF1(x=x_val[k], y=y_val[k], model=t)
             avg_f1 = sum(f1_scores) / n_folds
@@ -93,7 +68,7 @@ def determineDTkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
 
 
 # SVM Hyper-parameter tuning
-def determineSVMkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
+def determineSVMkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0):
     best_kernel = 'linear'
     best_c = 0.1
     best_gamma = 'scale'
@@ -109,10 +84,14 @@ def determineSVMkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
                 for tol in [0.1, 0.01, 0.005, 0.001]:
                     for degree in poly_degrees:
                         scores = [0, 0, 0, 0, 0]
-                        print(f"Computing kernel={kernel}, c={c}, gamma={gamma}, tol={tol}, degree={degree}")
+                        print(f"Computing kernel={kernel}, c={c}, gamma={gamma}, degree={degree}")
                         for k in range(0, n_folds):
-                            model = make_pipeline(StandardScaler(), svm.SVC(gamma=gamma, tol=tol, coef0=c,
-                                                                            degree=degree, kernel=kernel,
+                            model = make_pipeline(StandardScaler(), svm.SVC(gamma=gamma,
+                                                                            tol=tol,
+                                                                            coef0=c,
+                                                                            degree=degree,
+                                                                            kernel=kernel,
+                                                                            class_weight=class_weights,
                                                                             random_state=seed))
                             model.fit(x_train[k], y_train[k].values.ravel())
                             scores[k] = model.score(x_val[k], y_val[k].values.ravel())
@@ -125,17 +104,17 @@ def determineSVMkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
                             best_tol = tol
                             best_degree = degree
                             best_score = avg_score
-    return {"kernel": best_kernel, "c": best_c, "gamma": best_gamma, "tol": best_tol, "degree": best_degree}
+    return {"kernel": best_kernel, "c": best_c, "gamma": best_gamma, "degree": best_degree, "tol": best_tol}
 
 
 # Random Forest Hyper-parameter tuning
-def determineRFkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
+def determineRFkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0):
     best_n = 10
     best_bootstrap = True
     best_max_depth = 3
-    best_min_samples_split = 10
-    best_max_leaf_nodes = 5
-    best_min_samples_leaf = 10
+    # best_min_samples_split = 10
+    # best_max_leaf_nodes = 5
+    # best_min_samples_leaf = 10
     best_max_features = 3
     best_max_samples = 1
     best_score = 0
@@ -145,37 +124,46 @@ def determineRFkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
         for bootstrap in [True, False]:
             max_samples_values = [0.1, 0.25, 0.5, 0.7] if bootstrap else [None]
             for max_depth in [3, 5, 7, 9]:  # A very deep tree can cause over-fitting
-                for min_samples_split in [10, 25, 50, 100]:  # The min. observations in any node to split it
-                    for max_leaf_nodes in [5, 15, 25, 35]:  # The max. leaves in a tree
-                        for min_samples_leaf in [10, 25, 50, 100]:  # The min. samples in a leaf after a split
-                            for max_features in [3, 7, 10, 14, 17]:
-                                for max_samples in max_samples_values:
-                                    print(f"Computing n={n}, max_depth={max_depth}, min_sample_split={min_samples_split}, "
-                                          f"max_leaf_nodes={max_leaf_nodes}, min_samples_leaf={min_samples_leaf}, "
-                                          f"max_features={max_features}, bootstrap={bootstrap}, max_samples={max_samples}")
-                                    scores = [0, 0, 0, 0, 0]
-                                    for k in range(0, n_folds):
-                                        model = RandomForestClassifier(n_estimators=n, max_depth=max_depth, min_samples_split=min_samples_split,
-                                                                       max_leaf_nodes=max_leaf_nodes, min_samples_leaf=min_samples_leaf,
-                                                                       max_features=max_features, bootstrap=bootstrap, max_samples=max_samples,
-                                                                       ccp_alpha=0.002, criterion='entropy', random_state=seed)
-                                        model.fit(x_train[k], y_train[k].values.ravel())
-                                        scores[k] = model.score(x_val[k], y_val[k].values.ravel())
-                                    avg_score = sum(scores) / n_folds
-                                    print(avg_score)
-                                    if avg_score > best_score:
-                                        best_n = n
-                                        best_bootstrap = bootstrap
-                                        best_max_depth = max_depth
-                                        best_min_samples_split = min_samples_split
-                                        best_max_leaf_nodes = max_leaf_nodes
-                                        best_min_samples_leaf = min_samples_leaf
-                                        best_max_features = max_features
-                                        best_max_samples = max_samples
-                                        best_score = avg_score
-    return {"n": best_n, "bootstrap": best_bootstrap, "max_depth": best_max_depth, "min_samples_split": best_min_samples_split,
-            "max_leaf_nodes": best_max_leaf_nodes, "min_samples_leaf": best_min_samples_leaf, "max_features": best_max_features,
-            "max_samples": best_max_samples}
+                # for min_samples_split in [10, 25, 50, 100]:  # The min. observations in any node to split it
+                    # for max_leaf_nodes in [5, 15, 25, 35]:  # The max. leaves in a tree
+                        # for min_samples_leaf in [10, 25, 50, 100]:  # The min. samples in a leaf after a split
+                for max_features in [3, 7, 10, 14, 17]:
+                    for max_samples in max_samples_values:
+                        print(f"Computing n={n}, max_depth={max_depth}, "
+                              # f"min_sample_split={min_samples_split}, max_leaf_nodes={max_leaf_nodes}, min_samples_leaf={min_samples_leaf}, "
+                              f"max_features={max_features}, bootstrap={bootstrap}, max_samples={max_samples}")
+                        scores = [0, 0, 0, 0, 0]
+                        for k in range(0, n_folds):
+                            model = RandomForestClassifier(n_estimators=n,
+                                                           max_depth=max_depth,
+                                                           # min_samples_split=min_samples_split,
+                                                           # max_leaf_nodes=max_leaf_nodes,
+                                                           # min_samples_leaf=min_samples_leaf,
+                                                           max_features=max_features,
+                                                           bootstrap=bootstrap,
+                                                           max_samples=max_samples,
+                                                           ccp_alpha=0.002,
+                                                           criterion='entropy',
+                                                           class_weight=class_weights,
+                                                           random_state=seed)
+                            model.fit(x_train[k], y_train[k].values.ravel())
+                            scores[k] = model.score(x_val[k], y_val[k].values.ravel())
+                        avg_score = sum(scores) / n_folds
+                        print(avg_score)
+                        if avg_score > best_score:
+                            best_n = n
+                            best_bootstrap = bootstrap
+                            best_max_depth = max_depth
+                            # best_min_samples_split = min_samples_split
+                            # best_max_leaf_nodes = max_leaf_nodes
+                            # best_min_samples_leaf = min_samples_leaf
+                            best_max_features = max_features
+                            best_max_samples = max_samples
+                            best_score = avg_score
+    return {"n": best_n, "bootstrap": best_bootstrap, "max_depth": best_max_depth,
+            # "min_samples_split": best_min_samples_split,
+            # "max_leaf_nodes": best_max_leaf_nodes, "min_samples_leaf": best_min_samples_leaf,
+            "max_features": best_max_features, "max_samples": best_max_samples}
 
 
 def displayConfusionMatrix(y_ground_truth, y_predicted, title=""):
@@ -184,6 +172,11 @@ def displayConfusionMatrix(y_ground_truth, y_predicted, title=""):
     d.plot()
     plt.title(title)
     plt.show()
+
+
+def saveModel(model, file_name):
+    with open(os.path.join('output', file_name+'.obj'), 'wb') as write_file:
+        pickle.dump(model, write_file)
 
 
 if __name__ == '__main__':
@@ -198,45 +191,63 @@ if __name__ == '__main__':
     n_folds = 5
     x_train_v, x_val, y_train_v, y_val = stratifiedKFold(data_x=x_training, data_y=y_training, n_folds=n_folds, seed=seed)
 
+    class_weights = {0: 1, 1: 2}
+
     # --- DECISION TREE ----
-    # best_alpha_tree, best_criterion_tree = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
-    best_alpha_tree = 0.002
+    # best_alpha_tree, best_criterion_tree = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val,
+    #                                                                     class_weights, seed)
+    # print(best_alpha_tree, best_criterion_tree)
+    best_alpha_tree = 0  # 0.002
     best_criterion_tree = 'entropy'
-    dt_model = tree.DecisionTreeClassifier(criterion=best_criterion_tree, ccp_alpha=best_alpha_tree, random_state=seed)
+    dt_model = tree.DecisionTreeClassifier(criterion=best_criterion_tree,
+                                           ccp_alpha=best_alpha_tree,
+                                           random_state=seed,
+                                           class_weight=class_weights)
     dt_model.fit(x_training, y_training)
-    # showTree(T)
+    showTree(dt_model, feature_names)
     predictions_tree = dt_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_tree, "Decision Tree")
-    with open(os.path.join('output', 'decision_tree.obj'), 'wb') as file:
-        pickle.dump(dt_model, file)
+    saveModel(dt_model, 'decision_tree')
     # print("Tree:", classification_report(y_test, predictions))
 
     # --- SVM ----
-    # best_parameters_svm = determineSVMkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
-    best_parameters_svm = {"kernel": 'poly', "c": 1, "gamma": 0.1, "tol": 0.01, "degree": 5}
-    svm_model = make_pipeline(StandardScaler(), svm.SVC(gamma=best_parameters_svm['gamma'], tol=best_parameters_svm['tol'],
-                                                        coef0=best_parameters_svm['c'], degree=best_parameters_svm['degree'],
-                                                        kernel=best_parameters_svm['kernel'], random_state=seed,
+    # best_parameters_svm = determineSVMkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
+    # print(best_parameters_svm)
+    best_parameters_svm = {"kernel": 'poly', "c": 10, "gamma": 1, "degree": 3}
+    svm_model = make_pipeline(StandardScaler(), svm.SVC(gamma=best_parameters_svm['gamma'],
+                                                        # tol=best_parameters_svm['tol'],
+                                                        coef0=best_parameters_svm['c'],
+                                                        degree=best_parameters_svm['degree'],
+                                                        kernel=best_parameters_svm['kernel'],
+                                                        random_state=seed,
+                                                        class_weight=class_weights,
                                                         probability=True))
     svm_model.fit(x_training, y_training.values.ravel())
-    with open(os.path.join('output', 'svm.obj'), 'wb') as file:
-        pickle.dump(svm_model, file)
     predictions_svm = svm_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_svm, "SVM")
+    saveModel(svm_model, 'svm')
 
     # --- Random Forest ----
-    # best_parameters_rf = determineRFkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
+    # best_parameters_rf = determineRFkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
     # print(best_parameters_rf)
-    best_parameters_rf = {"n": 50, "bootstrap": False, "max_depth": 9, "min_samples_split": 25, "max_leaf_nodes": 35,
-                          "min_samples_leaf": 10, "max_features": 10, "max_samples": None}
+    best_parameters_rf = {'n': 50, 'bootstrap': False, 'max_depth': 9, 'max_features': 7, 'max_samples': None}  # ,  "min_samples_split": 25, "max_leaf_nodes": 35, "min_samples_leaf": 10}
 
-    rf_model = RandomForestClassifier(n_estimators=best_parameters_rf['n'], max_depth=best_parameters_rf['max_depth'],
-                                      min_samples_split=best_parameters_rf['min_samples_split'], max_leaf_nodes=best_parameters_rf['max_leaf_nodes'],
-                                      min_samples_leaf=best_parameters_rf['min_samples_leaf'], max_features=best_parameters_rf['max_features'],
-                                      bootstrap=best_parameters_rf['bootstrap'], max_samples=best_parameters_rf['max_samples'],
-                                      ccp_alpha=best_alpha_tree, criterion=best_criterion_tree, random_state=seed)
+    rf_model = RandomForestClassifier(n_estimators=best_parameters_rf['n'],
+                                      max_depth=best_parameters_rf['max_depth'],
+                                      # min_samples_split=best_parameters_rf['min_samples_split'],
+                                      # max_leaf_nodes=best_parameters_rf['max_leaf_nodes'],
+                                      # min_samples_leaf=best_parameters_rf['min_samples_leaf'],
+                                      max_features=best_parameters_rf['max_features'],
+                                      bootstrap=best_parameters_rf['bootstrap'],
+                                      max_samples=best_parameters_rf['max_samples'],
+                                      ccp_alpha=best_alpha_tree,
+                                      criterion=best_criterion_tree,
+                                      class_weight=class_weights,
+                                      random_state=seed
+                                      )
     rf_model.fit(x_training, y_training.values.ravel())
-    with open(os.path.join('output', 'random_forest.obj'), 'wb') as file:
-        pickle.dump(rf_model, file)
     predictions_rf = rf_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_rf, "RF")
+    saveModel(rf_model, 'random_forest')
+
+    # TODO: Logistic regression?

@@ -27,4 +27,5 @@ def getRank(url):
                 return int(rank)
     except KeyError:
         print("error in response:", response)
-    return 99999999
+    return 999999999
+
