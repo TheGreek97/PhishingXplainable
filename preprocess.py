@@ -56,6 +56,12 @@ def write_feature_file(file_path, features):
             output.write(json.dumps(features, sort_keys=True, default=str))
 
 
+if __name__ == '__main__':
+    enron_dataset()
+    spam_assassin_dataset('easy_ham')
+    spam_assassin_dataset('hard_ham')
+
+
 """
 # Change only the links_present feature
 def dataset_links(folder):
@@ -122,10 +128,3 @@ def compute_ip_addr_features(folder='', dataset=None):
                     features["url_ip_address"] = ip
                     write_feature_file(file_path, features)
 """
-
-
-if __name__ == '__main__':
-    enron_dataset()
-    spam_assassin_dataset('easy_ham')
-    spam_assassin_dataset('hard_ham')
-

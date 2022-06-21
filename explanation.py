@@ -1,10 +1,11 @@
 import matplotlib.pyplot as plt
 from lime import lime_tabular
 from matplotlib import pyplot
-
+from heapq import nsmallest
 from data import load_data
 import warnings
 
+import numpy as np
 import os
 import pickle
 
@@ -22,12 +23,12 @@ def show_explanation(explanation, title=""):
     plt.show()
 
 
-def explain(explainer, instance_to_explain, model, num_features):
+def explain(explainer, instance_to_explain, model, num_features, print_out=True):
     explanation = explainer.explain_instance(instance_to_explain, model.predict_proba, num_features=num_features)
     pred = model.predict_proba(instance_to_explain.values.reshape(1, -1))
-    print(f"Predictions: Legit = {pred[0][0]}, Phishing = {pred[0][1]}")
-    print(explanation.as_list())
-
+    if print_out:
+        print(f"Predictions: Legit = {pred[0][0]}, Phishing = {pred[0][1]}")
+        print(explanation.as_list())
     return explanation, pred
 
 
@@ -48,6 +49,98 @@ def save_explanation_to_file(explanation, file_name, folder_name=None):
     explanation.save_to_file(os.path.join(base_path, file_name+".html"))
 
 
+def tree_global_explanation(tree_model):
+    # Decision tree feature importance based on the Gini index (Gini importance)
+    # Importance of a feature is computed as the total reduction of the criterion brought by that feature weighted by
+    # the probability of reaching that node (# of samples that reach the node, divided by the tot # of samples)
+    # The higher the value, the more important the feature.
+    importance = tree_model.feature_importances_
+    # summarize feature importance
+    for i, v in enumerate(importance):
+        print('Feature: %0d (%s), Score: %.5f' % (i, feature_names[i], v))
+    # plot decision tree feature importance
+    pyplot.bar([x for x in range(len(importance))], importance)
+    pyplot.show()
+
+
+def tree_local_explanation(clf, x_test, start_index=0, end_index=10, n_top_features=3):
+    node_indicator = clf.decision_path(x_test)
+    n_nodes = clf.tree_.node_count
+    feature = clf.tree_.feature
+    threshold = clf.tree_.threshold
+    leaf_id = clf.apply(x_test)
+    sample_ids = range(start_index, end_index)
+
+    for sample_id in sample_ids:
+        # obtain ids of the nodes `sample_id` goes through, i.e., row `sample_id`
+        node_index = node_indicator.indices[
+                     node_indicator.indptr[sample_id]: node_indicator.indptr[sample_id + 1]
+                     ]
+
+        print("Rules used to predict sample {id}:\n".format(id=sample_id))
+        print(f"Sample {id}:", x_test.iloc[sample_id])
+        # node = 0  # start at root
+        impurity_at_node = 1
+        features_impurity_differences = {f: 0 for f in feature_names}
+        for node_id in node_index:
+            # continue to the next node if it is a leaf node
+            feature_name = x_test.iloc[sample_id].keys()[feature[node_id]]  # the feature considered for the node split
+            if leaf_id[sample_id] == node_id:
+                continue
+            # check if value of the split feature for sample 0 is below threshold
+            if x_test.iloc[sample_id, feature[node_id]] <= threshold[node_id]:
+                threshold_sign = "<="
+                # node = clf.tree_.children_left[node]
+            else:
+                threshold_sign = ">"
+                # node = clf.tree_.children_right[node]
+            if node_id != 0:
+                diff_impurity = clf.tree_.impurity[node_id] - impurity_at_node
+                features_impurity_differences[feature_name] += diff_impurity
+            impurity_at_node = clf.tree_.impurity[node_id]
+
+            print(
+                "decision node {node} : ({feature_name} = {value}) "
+                "{inequality} {threshold})".format(
+                    node=node_id,
+                    sample=sample_id,
+                    feature_name= feature_name,
+                    feature=feature[node_id],
+                    value=x_test.iloc[sample_id, feature[node_id]],
+                    inequality=threshold_sign,
+                    threshold=threshold[node_id],
+                )
+            )
+
+        # For a group of samples, we can determine the common nodes the samples go through
+        common_nodes = node_indicator.toarray()[sample_ids].sum(axis=0) == len(sample_ids)
+        # obtain node ids using position in array
+        common_node_id = np.arange(n_nodes)[common_nodes]
+        print(f"\nThe following samples {sample_ids} share the node(s) {common_node_id} in the tree.")
+        print("This is {prop}% of all nodes.".format(prop=100 * len(common_node_id) / n_nodes))
+        top_features_gini_importance = nsmallest(n_top_features, features_impurity_differences,
+                                                 key=features_impurity_differences.get)
+        print(f"Top features are: {top_features_gini_importance}")
+        return top_features_gini_importance
+
+
+def lime_explain(model, lime_explainer, x_test, y_test, file_name='lime', start_index=0, end_index=10, show=True, save_file=True):
+    warnings.filterwarnings(action='ignore', category=UserWarning)
+
+    for i in range(start_index, end_index):
+        instance = x_test.iloc[i]
+        real_class = 'Legit (0)' if y_test.iloc[i].item() == 0 else 'Phishing (1)'
+        print("Instance " + str(i) + f" - Real class: {real_class}")
+        folder_name = str(i)+"_"+str(y_test.iloc[i].item())
+        # DECISION TREE
+        explanation_model, predictions = explain(lime_explainer, instance, model, len(feature_names))
+        if show:
+            show_explanation(explanation_model, "Explanation " + file_name)
+        if save_file:
+            save_explanation_to_file(explanation_model, file_name, folder_name=folder_name)
+        return explanation_model, predictions
+
+
 if __name__ == "__main__":
     # Load data
     seed = 42
@@ -57,44 +150,22 @@ if __name__ == "__main__":
     dt_model = load_model('decision_tree.obj')
     svm_model = load_model('svm.obj')
     rf_model = load_model('random_forest.obj')
+    lr_model = load_model('logistic_regression.obj')
 
-    warnings.filterwarnings(action='ignore', category=UserWarning)
+    start_test = 0
+    end_test = 10
 
-    # Decision tree feature importance based on the Gini index (Gini importance)
-    # Importance of a feature is computed as the (normalized) total reduction of the criterion brought by that feature.
-    importance = dt_model.feature_importances_
-    # summarize feature importance
-    for i, v in enumerate(importance):
-        print('Feature: %0d (%s), Score: %.5f' % (i, feature_names[i], v))
-    # plot feature importance
-    pyplot.bar([x for x in range(len(importance))], importance)
-    pyplot.show()
-
+    # tree_global_explanation(dt_model)
+    tree_local_explanation(dt_model, x_test, start_test, end_test)
     # LIME Explanations for single instances of the test set
     lime_explainer = lime_tabular.LimeTabularExplainer(x_training.values, mode="classification",
                                                        class_names=['Legit', 'Phishing'],
-                                                       feature_names=feature_names)
-    for i in range(0, 0):
-        instance = x_test.iloc[i]
-        real_class = 'Legit (0)' if y_test.iloc[i].item() == 0 else 'Phishing (1)'
-        print("Instance " + str(i) + f" - Real class: {real_class}")
+                                                       feature_names=feature_names, random_state=seed)
 
-        folder_name = str(i)+"_"+str(y_test.iloc[i].item())
-        # DECISION TREE
-        explanation_dt, _ = explain(lime_explainer, instance, dt_model, len(feature_names))
-        # show_explanation(explanation_dt, "Explanation DT")
-        save_explanation_to_file(explanation_dt, 'decision_tree', folder_name=folder_name)
-
-        # SVM
-        explanation_svm, _ = explain(lime_explainer, instance, svm_model, len(feature_names))
-        # show_explanation(explanation_svm, "Explanation SVM")
-        save_explanation_to_file(explanation_svm, 'svm', folder_name=folder_name)
-
-        # RANDOM FOREST
-        explanation_rf, predictions_instance = explain(lime_explainer, instance, rf_model, len(feature_names))
-        # show_explanation(explanation_rf, "Explanation RF")
-        save_explanation_to_file(explanation_rf, 'random_forest', folder_name=folder_name)
-        print("\n")
+    lime_explain(dt_model, lime_explainer, x_test, y_test, 'decision_tree', start_test, end_test)
+    # lime_explain(svm_model, lime_explainer, x_test, y_test, 'svm', start_test, end_test)
+    # lime_explain(rf_model, lime_explainer, x_test, y_test, 'random_forest', start_test, end_test)
+    # lime_explain(lr_model, lime_explainer, x_test, y_test, 'logistic_regression', start_test, end_test)
 
     # explanation_rf_1, predictions_instance_1 = explain_without_features(lime_explainer, instance,
     #                                                                    rf_model, explanation_rf,

@@ -21,11 +21,11 @@ from data import load_data, stratifiedKFold
 
 def showTree(model, feature_names):
     plt.figure(figsize=(200, 20))
-    tree.plot_tree(model)
+    tree.plot_tree(model, feature_names=feature_names, filled=True, rounded=True, class_names=["Legit", "Phishing"])
     print("Number of nodes:", model.tree_.node_count)
     print("Number of leaves:", model.get_n_leaves())
     plt.show()
-    output_filepath = os.path.join('output', 'decision_tree.dot')
+    """output_filepath = os.path.join('output', 'decision_tree.dot')
     dot_data = tree.export_graphviz(model, out_file=None,
                                     feature_names=feature_names,
                                     class_names=["Legit", "Phishing"],
@@ -33,7 +33,7 @@ def showTree(model, feature_names):
                                     special_characters=True)
     # graph = pydotplus.graphviz.graph_from_dot_data(dot_data)
     # graph.write_png(output_filepath)
-    # return graph
+    # return graph"""
 
 
 def decisionTreeF1(x, y, model):
@@ -46,6 +46,8 @@ def determineDTkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights,
     best_criterion = 'gini'
     best_alpha = 0
     best_f1 = 0
+    min_samples_leaf = 7
+    max_depth = 8
     n_folds = len(x_train)
     for criterion in ['gini', 'entropy']:
         for alpha in np.arange(0, 0.2, 0.001):
@@ -55,7 +57,9 @@ def determineDTkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights,
                 t = tree.DecisionTreeClassifier(criterion=criterion,
                                                 ccp_alpha=alpha,
                                                 random_state=seed,
-                                                class_weight=class_weights)
+                                                class_weight=class_weights,
+                                                min_samples_leaf=min_samples_leaf,
+                                                max_depth=max_depth)
                 t.fit(x_train[k], y_train[k])
                 f1_scores[k] = decisionTreeF1(x=x_val[k], y=y_val[k], model=t)
             avg_f1 = sum(f1_scores) / n_folds
@@ -65,7 +69,8 @@ def determineDTkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights,
                 best_alpha = alpha
                 best_criterion = criterion
 
-    return best_alpha, best_criterion
+    return {"alpha": best_alpha, "criterion": best_criterion,
+            "max_depth": max_depth, "min_samples_leaf": min_samples_leaf}
 
 
 # SVM Hyper-parameter tuning
@@ -238,15 +243,17 @@ if __name__ == '__main__':
     class_weights = {0: 1, 1: 2}
 
     # --- DECISION TREE ----
-    # best_alpha_tree, best_criterion_tree = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val,
-    #                                                                     class_weights, seed)
-    # print(best_alpha_tree, best_criterion_tree)
-    best_alpha_tree = 0  # 0.002
-    best_criterion_tree = 'entropy'
-    dt_model = tree.DecisionTreeClassifier(criterion=best_criterion_tree,
-                                           ccp_alpha=best_alpha_tree,
+    best_parameters_dt = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val,
+                                                       class_weights, seed)
+    print(best_parameters_dt["alpha"], best_parameters_dt["criterion"])
+    # best_alpha_tree = 0  # 0.002
+    # best_criterion_tree = 'entropy'
+    dt_model = tree.DecisionTreeClassifier(criterion=best_parameters_dt["criterion"],
+                                           ccp_alpha=best_parameters_dt["alpha"],
                                            random_state=seed,
-                                           class_weight=class_weights)
+                                           class_weight=class_weights,
+                                           min_samples_leaf=best_parameters_dt["min_samples_leaf"],
+                                           max_depth=best_parameters_dt["max_depth"])
     
     dt_model.fit(x_training, y_training)
     showTree(dt_model, feature_names)
@@ -254,7 +261,7 @@ if __name__ == '__main__':
     displayConfusionMatrix(y_test, predictions_tree, "Decision Tree")
     saveModel(dt_model, 'decision_tree')
     # print("Tree:", classification_report(y_test, predictions))
-    
+    """
     # --- SVM ----
     # best_parameters_svm = determineSVMkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
     # print(best_parameters_svm)
@@ -305,3 +312,4 @@ if __name__ == '__main__':
     predictions_lr = lr_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_lr, "LR")
     saveModel(lr_model, 'logistic_regression')
+"""
