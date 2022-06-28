@@ -10,11 +10,20 @@ import sklearn.tree as tree
 import sklearn.svm as svm
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import AdaBoostClassifier
 from sklearn.metrics import f1_score
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import classification_report
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
+
+import tensorflow as tf
+from tensorflow import keras
+from keras import layers
+from keras.optimizers import Adam
+from keras import callbacks
+from keras.utils import np_utils
 
 from data import load_data, stratifiedKFold
 
@@ -215,6 +224,20 @@ def determineRFkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights,
             "max_features": best_max_features, "max_samples": best_max_samples}
 
 
+def build_neural_network():
+    inputs = keras.Input(shape=(18,))
+    x = layers.Dense(64, activation="relu")(inputs)
+    x = layers.Dense(64, activation="relu")(x)
+    outputs = layers.Dense(2, activation="softmax")(x)
+    model = keras.Model(inputs=inputs, outputs=outputs, name="phishing_xai")
+    model.compile(
+        loss='binary_crossentropy',
+        optimizer=Adam(lr=0.0001),
+        metrics=["accuracy"],
+    )
+    return model
+
+
 def displayConfusionMatrix(y_ground_truth, y_predicted, title=""):
     cm = confusion_matrix(y_ground_truth, y_predicted)
     d = ConfusionMatrixDisplay(cm, display_labels=["Legit", "Phishing"])
@@ -241,7 +264,7 @@ if __name__ == '__main__':
     x_train_v, x_val, y_train_v, y_val = stratifiedKFold(data_x=x_training, data_y=y_training, n_folds=n_folds, seed=seed)
 
     class_weights = {0: 1, 1: 2}
-
+    """
     # --- DECISION TREE ----
     best_parameters_dt = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val,
                                                        class_weights, seed)
@@ -261,7 +284,23 @@ if __name__ == '__main__':
     displayConfusionMatrix(y_test, predictions_tree, "Decision Tree")
     saveModel(dt_model, 'decision_tree')
     # print("Tree:", classification_report(y_test, predictions))
-    """
+    
+    # --- Logistic Regression ---
+    # best_parameters_lr = determineLRkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
+    best_parameters_lr = {"solver": 'liblinear', "c": 1, "penalty": 'l1'}
+    print(best_parameters_lr)
+    lr_model = LogisticRegression(solver=best_parameters_lr["solver"], penalty=best_parameters_lr["penalty"],
+                                  C=best_parameters_lr["c"], class_weight=class_weights, random_state=seed)
+    lr_model.fit(x_training, y_training.values.ravel())
+    predictions_lr = lr_model.predict(x_test)
+    displayConfusionMatrix(y_test, predictions_lr, "LR")
+    saveModel(lr_model, 'logistic_regression')
+    
+    #TODO: Boosting __   from sklearn.ensemble import AdaBoostClassifier  
+    https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.AdaBoostClassifier.html#sklearn.ensemble.AdaBoostClassifier
+    clf = AdaBoostClassifier(n_estimators=100, learning_rate=1.0, random_state=seed)
+    
+    
     # --- SVM ----
     # best_parameters_svm = determineSVMkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
     # print(best_parameters_svm)
@@ -302,14 +341,31 @@ if __name__ == '__main__':
     displayConfusionMatrix(y_test, predictions_rf, "RF")
     saveModel(rf_model, 'random_forest')
 
-    # --- Logistic Regression ---
-    # best_parameters_lr = determineLRkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
-    best_parameters_lr = {"solver": 'liblinear', "c": 1, "penalty": 'l1'}
-    print(best_parameters_lr)
-    lr_model = LogisticRegression(solver=best_parameters_lr["solver"], penalty=best_parameters_lr["penalty"],
-                                  C=best_parameters_lr["c"], class_weight=class_weights, random_state=seed)
-    lr_model.fit(x_training, y_training.values.ravel())
-    predictions_lr = lr_model.predict(x_test)
-    displayConfusionMatrix(y_test, predictions_lr, "LR")
-    saveModel(lr_model, 'logistic_regression')
 """
+
+    # --- Multi-Layer Perceptron ----
+    scaler = MinMaxScaler()
+    x_train_nn = scaler.fit_transform(x_train_v[0])
+    y_train_nn = np_utils.to_categorical(y_train_v[0], 2)
+
+    x_val_nn = scaler.fit_transform(x_val[0])
+    y_val_nn = np_utils.to_categorical(y_val[0], 2)
+
+    x_test_nn = scaler.transform(x_test)
+    nn_model = build_neural_network()
+    callbacks_list = [
+        # min_delta: Minimum change in the monitored quantity to qualify as an improvement
+        # patience: Number of epochs with no improvement after which training will be stopped
+        # restore_best_weights: Whether to restore model weights from the epoch with the best value of val_loss
+        callbacks.EarlyStopping(monitor='val_loss', min_delta=0.0001, patience=10, restore_best_weights=True)
+    ]
+    nn_model.fit(x_train_nn, y_train_nn, batch_size=32, epochs=50, verbose=2, callbacks=callbacks_list,
+                 shuffle=True, validation_data=(x_val_nn, y_val_nn))
+    # nn_model.fit(x=tf.convert_to_tensor(np.asarray(x_training).astype('int32')),
+    #              y=tf.convert_to_tensor(np.asarray(y_training).astype('int32')),
+    #              batch_size=32, epochs=50, validation_split=0.2)
+    predictions_nn = nn_model.predict(x_test_nn, verbose=1, use_multiprocessing=True, workers=12)
+    predictions_nn = np.argmax(predictions_nn, axis=1)
+
+    displayConfusionMatrix(np.asarray(y_test).astype('int32'), predictions_nn, "MLP")
+    nn_model.save(os.path.join("output", "mlp"))

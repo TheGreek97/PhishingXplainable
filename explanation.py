@@ -64,6 +64,7 @@ def tree_global_explanation(tree_model):
     pyplot.show()
 
 
+# TODO
 def tree_local_explanation(clf, x_test, start_index=0, end_index=10, n_top_features=3):
     node_indicator = clf.decision_path(x_test)
     n_nodes = clf.tree_.node_count
@@ -155,9 +156,8 @@ def calculate_global_feature_importance(explanations, feature_names, file_name):
             if top_feature[0].isdigit():
                 top_feature = e[i][0].split(' ')[2]
             feature_presence[top_feature] += 1  # increase the feature by one if it is in the top 3 features
-    base_path = os.path.join('output', 'feature_importance')
+    base_path = os.path.join('output', 'feature_importance_lime')
     file_path = os.path.join(base_path, file_name+'.json')
-
     mode = 'w' if os.path.exists(file_path) else 'x'
     with open(file_path, mode) as out:
         out.write(json.dumps(feature_presence))
@@ -200,6 +200,8 @@ if __name__ == "__main__":
     X100 = shap.utils.sample(x_test, 100)
     explainer = shap.Explainer(svm_model.predict, X100)
 
+
+"""
     # Global feature importance
     explanations_svm, _ = lime_explain(svm_model, lime_explainer, x_test, y_test, 'svm', start_test, end_test, show=False,
                                        save_file=False)
@@ -209,6 +211,7 @@ if __name__ == "__main__":
                                       save_file=False)
     calculate_global_feature_importance(explanations_rf, feature_names, 'rf')
 
-    explanations_lr, _ = lime_explain(lr_model, lime_explainer, x_test, y_test, 'lr', start_test, end_test, show=False,
+    # explanations_lr, _ = lime_explain(lr_model, lime_explainer, x_test, y_test, 'lr', start_test, end_test, show=False,
                                       save_file=False)
-    calculate_global_feature_importance(explanations_lr, feature_names, 'lr')
+    # calculate_global_feature_importance(explanations_lr, feature_names, 'lr')
+"""
