@@ -64,23 +64,23 @@ def tree_global_explanation(tree_model):
     pyplot.show()
 
 
-# TODO
-def tree_local_explanation(clf, x_test, start_index=0, end_index=10, n_top_features=3):
+def tree_global_feature_importance_to_file(clf, x_test, feature_names, start_index=0, end_index=10, n_top_features=3,
+                                           file_name='tree'):
     node_indicator = clf.decision_path(x_test)
     n_nodes = clf.tree_.node_count
     feature = clf.tree_.feature
     threshold = clf.tree_.threshold
     leaf_id = clf.apply(x_test)
     sample_ids = range(start_index, end_index)
-
+    feature_presence = {f: 0 for f in feature_names}
     for sample_id in sample_ids:
         # obtain ids of the nodes `sample_id` goes through, i.e., row `sample_id`
         node_index = node_indicator.indices[
                      node_indicator.indptr[sample_id]: node_indicator.indptr[sample_id + 1]
                      ]
 
-        print("Rules used to predict sample {id}:\n".format(id=sample_id))
-        print(f"Sample {id}:", x_test.iloc[sample_id])
+        # print("Rules used to predict sample {id}:\n".format(id=sample_id))
+        # print(f"Sample {id}:", x_test.iloc[sample_id])
         # node = 0  # start at root
         impurity_at_node = 1
         features_impurity_differences = {f: 0 for f in feature_names}
@@ -89,19 +89,19 @@ def tree_local_explanation(clf, x_test, start_index=0, end_index=10, n_top_featu
             feature_name = x_test.iloc[sample_id].keys()[feature[node_id]]  # the feature considered for the node split
             if leaf_id[sample_id] == node_id:
                 continue
-            # check if value of the split feature for sample 0 is below threshold
+            """# check if value of the split feature for sample 0 is below threshold
             if x_test.iloc[sample_id, feature[node_id]] <= threshold[node_id]:
                 threshold_sign = "<="
                 # node = clf.tree_.children_left[node]
             else:
                 threshold_sign = ">"
-                # node = clf.tree_.children_right[node]
+                # node = clf.tree_.children_right[node]"""
             if node_id != 0:
                 diff_impurity = clf.tree_.impurity[node_id] - impurity_at_node
                 features_impurity_differences[feature_name] += diff_impurity
             impurity_at_node = clf.tree_.impurity[node_id]
 
-            print(
+            """print(
                 "decision node {node} : ({feature_name} = {value}) "
                 "{inequality} {threshold})".format(
                     node=node_id,
@@ -112,21 +112,27 @@ def tree_local_explanation(clf, x_test, start_index=0, end_index=10, n_top_featu
                     inequality=threshold_sign,
                     threshold=threshold[node_id],
                 )
-            )
-
-        # For a group of samples, we can determine the common nodes the samples go through
+            )"""
+        """"# For a group of samples, we can determine the common nodes the samples go through
         common_nodes = node_indicator.toarray()[sample_ids].sum(axis=0) == len(sample_ids)
         # obtain node ids using position in array
         common_node_id = np.arange(n_nodes)[common_nodes]
         print(f"\nThe following samples {sample_ids} share the node(s) {common_node_id} in the tree.")
-        print("This is {prop}% of all nodes.".format(prop=100 * len(common_node_id) / n_nodes))
+        print("This is {prop}% of all nodes.".format(prop=100 * len(common_node_id) / n_nodes))"""
         top_features_gini_importance = nsmallest(n_top_features, features_impurity_differences,
                                                  key=features_impurity_differences.get)
-        print(f"Top features are: {top_features_gini_importance}")
-        return top_features_gini_importance
+        # print(f"Top features are: {top_features_gini_importance}")
+        for f in top_features_gini_importance:
+            feature_presence[f] += 1
+        base_path = os.path.join('output', 'feature_importance')
+        file_path = os.path.join(base_path, file_name + '.json')
+        mode = 'w' if os.path.exists(file_path) else 'x'
+        with open(file_path, mode) as out:
+            out.write(json.dumps(feature_presence))
+    return feature_presence
 
 
-def lime_explain(model, lime_explainer, x_test, y_test, file_name='lime', start_index=0, end_index=10, show=True, save_file=True):
+def lime_explain(model, lime_explainer, x_test, y_test, model_name='lime', start_index=0, end_index=10, show=True, save_file=True):
     warnings.filterwarnings(action='ignore', category=UserWarning)
     explanations = []
     predictions = []
@@ -135,20 +141,19 @@ def lime_explain(model, lime_explainer, x_test, y_test, file_name='lime', start_
         real_class = 'Legit (0)' if y_test.iloc[i].item() == 0 else 'Phishing (1)'
         print("Instance " + str(i) + f" - Real class: {real_class}")
         folder_name = str(i)+"_"+str(y_test.iloc[i].item())
-        # DECISION TREE
         explanation_model, prediction = explain(lime_explainer, instance, model, len(feature_names))
         if show:
-            show_explanation(explanation_model, "Explanation " + file_name)
+            show_explanation(explanation_model, "Explanation " + model_name)
         if save_file:
-            save_explanation_to_file(explanation_model, file_name, folder_name=folder_name)
+            save_explanation_to_file(explanation_model, model_name, folder_name=folder_name)
         explanations.append(explanation_model.as_list())
         predictions.append(prediction)
     return explanations, predictions
 
 
-# Calcola percentuale di quanto ciascuna feature viene tenuta in conto durante le explanation di LIME e SHAP
-# (e anche quello dell'albero). Il miglior modello è quello con più eterogeneità nelle features
-def calculate_global_feature_importance(explanations, feature_names, file_name):
+# Calcola percentuale di quanto ciascuna feature viene tenuta in conto durante le explanation di LIME
+# Il "miglior" modello è quello con più eterogeneità nelle features
+def lime_global_feature_importance_to_file(explanations, feature_names, file_name):
     feature_presence = {f: 0 for f in feature_names}
     for e in explanations:
         for i in range(0, 3):  # take the top 3 features
@@ -156,7 +161,7 @@ def calculate_global_feature_importance(explanations, feature_names, file_name):
             if top_feature[0].isdigit():
                 top_feature = e[i][0].split(' ')[2]
             feature_presence[top_feature] += 1  # increase the feature by one if it is in the top 3 features
-    base_path = os.path.join('output', 'feature_importance_lime')
+    base_path = os.path.join('output', 'feature_importance', 'lime')
     file_path = os.path.join(base_path, file_name+'.json')
     mode = 'w' if os.path.exists(file_path) else 'x'
     with open(file_path, mode) as out:
@@ -173,12 +178,15 @@ if __name__ == "__main__":
     svm_model = load_model('svm.obj')
     rf_model = load_model('random_forest.obj')
     lr_model = load_model('logistic_regression.obj')
+    # TODO: Load mlp with keras
 
     start_test = 0
     end_test = len(y_test)
 
+    tree_global_explanation(dt_model)
+
     # tree_global_explanation(dt_model)
-    # tree_local_explanation(dt_model, x_test, start_test, end_test)
+    # tree_global_feature_importance_to_file(dt_model, x_test, start_test, end_test)
     # LIME Explanations for single instances of the test set
     lime_explainer = lime_tabular.LimeTabularExplainer(x_training.values, mode="classification",
                                                        class_names=['Legit', 'Phishing'],
@@ -197,21 +205,43 @@ if __name__ == "__main__":
     # print('Difference:', predictions_instance[0] - predictions_instance_1[0])
 
     # ----- SHAP -----
-    X100 = shap.utils.sample(x_test, 100)
-    explainer = shap.Explainer(svm_model.predict, X100)
+    X_idx = 2
+    # X100 = shap.utils.sample(x_training, 100)
+    x_training = x_training * 1
+    x_test = x_test * 1
+    # f = lambda x: svm_model.predict_proba(x)[:, 1]
+    med = x_training.median().values.reshape((1, x_training.shape[1]))
+
+    # TODO: SHAP
+    explainer = shap.Explainer(svm_model.predict, med)
+    shap_values = explainer(x_test.iloc[0:1000, :])
+    shap.summary_plot(shap_values, x_test.iloc[0:1000, :])
 
 
-"""
-    # Global feature importance
-    explanations_svm, _ = lime_explain(svm_model, lime_explainer, x_test, y_test, 'svm', start_test, end_test, show=False,
-                                       save_file=False)
-    calculate_global_feature_importance(explanations_svm, feature_names, 'svm')
+    """explainer = shap.KernelExplainer(svm_model.predict, X100, link='identity')
+    shap_values = explainer.shap_values(X=x_test.iloc[X_idx:X_idx+1, :], nsamples=100)
+    shap.summary_plot(shap_values=shap_values, features=feature_names)"""
 
-    explanations_rf, _ = lime_explain(rf_model, lime_explainer, x_test, y_test, 'rf', start_test, end_test, show=False,
-                                      save_file=False)
-    calculate_global_feature_importance(explanations_rf, feature_names, 'rf')
 
-    # explanations_lr, _ = lime_explain(lr_model, lime_explainer, x_test, y_test, 'lr', start_test, end_test, show=False,
-                                      save_file=False)
-    # calculate_global_feature_importance(explanations_lr, feature_names, 'lr')
+
+    # ---- Global feature importance -----
+    # DECISION TREE
+    tree_global_feature_importance_to_file(clf=dt_model, x_test=x_test, feature_names=feature_names,
+                                           start_index=start_test, end_index=end_test, n_top_features=3)
+
+    # SVM
+    explanations_svm, _ = lime_explain(svm_model, lime_explainer, x_test, y_test, 'svm', 
+                                       start_test, end_test, show=False, save_file=False)
+    lime_global_feature_importance_to_file(explanations_svm, feature_names, 'svm')
+
+    # RANDOM FOREST
+    explanations_rf, _ = lime_explain(rf_model, lime_explainer, x_test, y_test, 'rf',
+                                      start_test, end_test, show=False, save_file=False)
+    lime_global_feature_importance_to_file(explanations_rf, feature_names, 'rf')
+
+    """    
+    #LOGISTIC REGRESSION
+    # explanations_lr, _ = lime_explain(lr_model, lime_explainer, x_test, y_test, 'lr', 
+                                        start_test, end_test, show=False, save_file=False)
+    # lime_global_feature_importance_to_file(explanations_lr, feature_names, 'lr')
 """

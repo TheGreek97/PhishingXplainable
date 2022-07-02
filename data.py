@@ -20,11 +20,10 @@ def load_data(test_size=0.2, seed=0):
             except IndexError:
                 print("Ignoring ", f)
 
-    dataframe = pd.concat(dfs, ignore_index=True)  # concatenate all the data frames in the list.
+    dataframe = pd.concat(dfs, ignore_index=False)  # concatenate all the data frames in the list.
     feature_names = dataframe.columns[1:]  # first is the class
     x_data = dataframe.drop('class', axis='columns')
     y_data = dataframe.iloc[:, :1]  # The class
-
 
     # Fill eventual NaN values
     for col in x_data.columns:

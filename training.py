@@ -24,7 +24,9 @@ from keras import layers
 from keras.optimizers import Adam
 from keras import callbacks
 from keras.utils import np_utils
+import keras_tuner as kt
 
+import nn
 from data import load_data, stratifiedKFold
 
 
@@ -51,7 +53,7 @@ def decisionTreeF1(x, y, model):
 
 
 # Decision Tree Hyper-parameter tuning
-def determineDTkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0 ):
+def determineDTkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0):
     best_criterion = 'gini'
     best_alpha = 0
     best_f1 = 0
@@ -82,8 +84,59 @@ def determineDTkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights,
             "max_depth": max_depth, "min_samples_leaf": min_samples_leaf}
 
 
-# SVM Hyper-parameter tuning
+# Logistic Regression Hyper-parameter tuning
+def determineLRkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0):
+    best_solver = 'lbfgs'
+    best_c = 10
+    best_penalty = 'l2'
+    best_score = 0
+    n_folds = len(x_train)
+    for solver in ["newton-cg", "lbfgs", "liblinear", "sag", "saga"]:
+        if solver in {'newton-cg', "lbfgs", "sag"}:
+            penalties = ['l2', 'none']
+        elif solver == "saga":
+            penalties = ['elasticnet', 'l1', 'l2', 'none']
+        else:  # liblinear
+            penalties = ['l1', 'l2']
+        for penalty in penalties:
+            if penalty == 'elasticnet':
+                l1_ratios = [0, 0.25, 0.5, 0.75, 1]
+            else:
+                l1_ratios = [None]
+            if penalty == 'none':
+                cs = [1]
+            else:
+                cs = [10, 1.0, 0.1, 0.01]
+            for l1_ratio in l1_ratios:
+                for c in cs:
+                    scores = [0, 0, 0, 0, 0]
+                    print(f"Computing solver={solver}, penalty={penalty}, C={c}")
+                    for k in range(0, n_folds):
+                        model = LogisticRegression(solver=solver, penalty=penalty, C=c, class_weight=class_weights,
+                                                   random_state=seed, l1_ratio=l1_ratio, max_iter=500)
+                        model.fit(x_train[k], y_train[k].values.ravel())
+                        scores[k] = model.score(x_val[k], y_val[k].values.ravel())
+                    avg_score = sum(scores) / n_folds
+                    print(avg_score)
+                    if avg_score > best_score:
+                        best_solver = solver
+                        best_c = c
+                        best_penalty = penalty
+                        best_score = avg_score
+    return {"solver": best_solver, "c": best_c, "penalty": best_penalty}
+
+
 def determineSVMkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0):
+    """
+    SVM Hyper-parameter tuning
+    :param x_train: training set X
+    :param x_val: validation set X
+    :param y_train: training set Y
+    :param y_val: validation set Y
+    :param class_weights: class weights
+    :param seed: random state
+    :return: dictionary with the best parameters
+    """
     best_kernel = 'linear'
     best_c = 0.1
     best_gamma = 'scale'
@@ -91,7 +144,7 @@ def determineSVMkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights
     best_degree = 3
     best_score = 0
     n_folds = len(x_train)
-    for kernel in ["linear", "poly", "rbf", "sigmoid"]:
+    for kernel in ["linear", "poly", "rbf", "sigmoid"]:  # poly=240
         poly_degrees = range(2, 7) if kernel == "poly" else [3]
         gammas = [0.1, 1, 'auto'] if kernel in {"rbf", "poly", "sigmoid"} else ['scale']
         for c in [0.1, 0.5, 1, 10]:
@@ -101,11 +154,11 @@ def determineSVMkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights
                         scores = [0, 0, 0, 0, 0]
                         print(f"Computing kernel={kernel}, c={c}, gamma={gamma}, degree={degree}")
                         for k in range(0, n_folds):
-                            model = make_pipeline(StandardScaler(), svm.SVC(gamma=gamma,
-                                                                            tol=tol,
-                                                                            coef0=c,
+                            model = make_pipeline(StandardScaler(), svm.SVC(kernel=kernel,
                                                                             degree=degree,
-                                                                            kernel=kernel,
+                                                                            gamma=gamma,
+                                                                            coef0=c,
+                                                                            tol=tol,
                                                                             class_weight=class_weights,
                                                                             random_state=seed))
                             model.fit(x_train[k], y_train[k].values.ravel())
@@ -122,51 +175,10 @@ def determineSVMkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights
     return {"kernel": best_kernel, "c": best_c, "gamma": best_gamma, "degree": best_degree, "tol": best_tol}
 
 
-# Logistic Regression Hyper-parameter tuning
-def determineLRkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0):
-    best_solver = 'lbfgs'
-    best_c = 10
-    best_penalty = 'l2'
-    best_score = 0
-    n_folds = len(x_train)
-    for solver in ["newton-cg", "lbfgs", "liblinear", "sag", "saga"]:
-        if solver in {'newton-cg', "lbfgs", "sag"}:
-            penalties = ['l2', 'none']
-        elif solver == "saga":
-            penalties = ['elasticnet', 'l1', 'l2', 'none']
-        else:  # liblinear
-            penalties = ['l1', 'l2']
-
-        for penalty in penalties:
-            if penalty == 'elasticnet':
-                l1_ratios = [0, 0.25, 0.5, 0.75, 1]
-            else:
-                l1_ratios = [None]
-            if penalty == 'none':
-                cs = [1]
-            else:
-                cs = [10, 1.0, 0.1, 0.01]
-            for l1_ratio in l1_ratios:
-                for c in cs:
-                    scores = [0, 0, 0, 0, 0]
-                    print(f"Computing solver={solver}, penalty={penalty}, C={c}")
-                    for k in range(0, n_folds):
-                        model = LogisticRegression(solver=solver, penalty=penalty, C=c, class_weight=class_weights,
-                                                   random_state=seed, l1_ratio=l1_ratio)
-                        model.fit(x_train[k], y_train[k].values.ravel())
-                        scores[k] = model.score(x_val[k], y_val[k].values.ravel())
-                    avg_score = sum(scores) / n_folds
-                    print(avg_score)
-                    if avg_score > best_score:
-                        best_solver = solver
-                        best_c = c
-                        best_penalty = penalty
-                        best_score = avg_score
-    return {"solver": best_solver, "c": best_c, "penalty": best_penalty}
-
-
-# Random Forest Hyper-parameter tuning
 def determineRFkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0):
+    """
+        Random Forest Hyper-parameter tuning
+    """
     best_n = 10
     best_bootstrap = True
     best_max_depth = 3
@@ -224,18 +236,30 @@ def determineRFkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights,
             "max_features": best_max_features, "max_samples": best_max_samples}
 
 
-def build_neural_network():
-    inputs = keras.Input(shape=(18,))
-    x = layers.Dense(64, activation="relu")(inputs)
-    x = layers.Dense(64, activation="relu")(x)
-    outputs = layers.Dense(2, activation="softmax")(x)
-    model = keras.Model(inputs=inputs, outputs=outputs, name="phishing_xai")
-    model.compile(
-        loss='binary_crossentropy',
-        optimizer=Adam(lr=0.0001),
-        metrics=["accuracy"],
-    )
-    return model
+def determineBoostkFoldConfiguration(x_train, x_val, y_train, y_val, model=None, seed=0):
+    """
+        AdaBoosting classifier Hyper-parameter tuning
+    """
+    best_n = 25
+    best_learning_rate = 0.1
+    best_score = 0
+    n_folds = len(x_train)
+    for n in [25, 50, 100, 200]:
+        for learning_rate in [1, 2.5, 5]:
+            print(f"Computing model={model} n_estimators={n}, leaarning rate={learning_rate}, ")
+            scores = [0, 0, 0, 0, 0]
+            for k in range(0, n_folds):
+                model = AdaBoostClassifier(base_estimator=model, n_estimators=n,
+                                           learning_rate=learning_rate, random_state=seed)
+                model.fit(x_train[k], y_train[k].values.ravel())
+                scores[k] = model.score(x_val[k], y_val[k].values.ravel())
+            avg_score = sum(scores) / n_folds
+            print(avg_score)
+            if avg_score > best_score:
+                best_n = n
+                best_learning_rate = learning_rate
+                best_score = avg_score
+    return {"n": best_n, "learning_rate": best_learning_rate}
 
 
 def displayConfusionMatrix(y_ground_truth, y_predicted, title=""):
@@ -254,6 +278,7 @@ def saveModel(model, file_name):
 if __name__ == '__main__':
     seed = 42
     np.random.seed(seed)
+    tf.random.set_seed(seed)
 
     x_training, x_test, y_training, y_test, feature_names = load_data(test_size=0.2, seed=seed)
     # print("Shape :", x_training.shape)
@@ -263,14 +288,12 @@ if __name__ == '__main__':
     n_folds = 5
     x_train_v, x_val, y_train_v, y_val = stratifiedKFold(data_x=x_training, data_y=y_training, n_folds=n_folds, seed=seed)
 
-    class_weights = {0: 1, 1: 2}
+    class_weights = {0: 1, 1: 5}
     """
     # --- DECISION TREE ----
-    best_parameters_dt = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val,
-                                                       class_weights, seed)
-    print(best_parameters_dt["alpha"], best_parameters_dt["criterion"])
-    # best_alpha_tree = 0  # 0.002
-    # best_criterion_tree = 'entropy'
+    #    best_parameters_dt = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val,
+    #                                                       class_weights, seed)
+    best_parameters_dt = {'alpha': 0.0, 'criterion': 'gini', 'max_depth': 8, 'min_samples_leaf': 7}
     dt_model = tree.DecisionTreeClassifier(criterion=best_parameters_dt["criterion"],
                                            ccp_alpha=best_parameters_dt["alpha"],
                                            random_state=seed,
@@ -279,32 +302,43 @@ if __name__ == '__main__':
                                            max_depth=best_parameters_dt["max_depth"])
     
     dt_model.fit(x_training, y_training)
-    showTree(dt_model, feature_names)
+    # showTree(dt_model, feature_names)
     predictions_tree = dt_model.predict(x_test)
-    displayConfusionMatrix(y_test, predictions_tree, "Decision Tree")
+    displayConfusionMatrix(y_test, predictions_tree, "DT")
     saveModel(dt_model, 'decision_tree')
-    # print("Tree:", classification_report(y_test, predictions))
+    print("DT:", classification_report(y_test, predictions_tree, target_names=['Legit', 'Phishing']))
     
     # --- Logistic Regression ---
     # best_parameters_lr = determineLRkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
-    best_parameters_lr = {"solver": 'liblinear', "c": 1, "penalty": 'l1'}
-    print(best_parameters_lr)
+    # print(best_parameters_lr)
+    best_parameters_lr = {'solver': 'liblinear', 'c': 1, 'penalty': 'l1'}
     lr_model = LogisticRegression(solver=best_parameters_lr["solver"], penalty=best_parameters_lr["penalty"],
                                   C=best_parameters_lr["c"], class_weight=class_weights, random_state=seed)
     lr_model.fit(x_training, y_training.values.ravel())
     predictions_lr = lr_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_lr, "LR")
     saveModel(lr_model, 'logistic_regression')
-    
-    #TODO: Boosting __   from sklearn.ensemble import AdaBoostClassifier  
-    https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.AdaBoostClassifier.html#sklearn.ensemble.AdaBoostClassifier
-    clf = AdaBoostClassifier(n_estimators=100, learning_rate=1.0, random_state=seed)
-    
-    
+    print("LR:", classification_report(y_test, predictions_lr, target_names=['Legit', 'Phishing']))
+    """
+    """"
+    # --- AdaBoost classifier ---
+    best_parameters_boost = determineBoostkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed=seed)
+    print(best_parameters_boost)
+    # best_parameters_boost =
+    boost_model = AdaBoostClassifier(n_estimators=best_parameters_boost['n'],
+                                     learning_rate=best_parameters_boost['learning_rate'],
+                                     random_state=seed)
+    boost_model.fit(x_training, y_training.values.ravel())
+    predictions_boost = boost_model.predict(x_test)
+    displayConfusionMatrix(y_test, predictions_boost, "AdaBoost")
+    saveModel(boost_model, 'adaboost')
+    print("AdaBoost:", classification_report(y_test, predictions_boost, target_names=['Legit', 'Phishing']))
+    """
+    """
     # --- SVM ----
     # best_parameters_svm = determineSVMkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
     # print(best_parameters_svm)
-    best_parameters_svm = {"kernel": 'poly', "c": 10, "gamma": 1, "degree": 3}
+    best_parameters_svm = {'kernel': 'poly', 'c': 10, 'gamma': 'auto', 'degree': 5, 'tol': 0.1}  # {"kernel": 'poly', "c": 10, "gamma": 1, "degree": 3}
     svm_model = make_pipeline(StandardScaler(), svm.SVC(gamma=best_parameters_svm['gamma'],
                                                         # tol=best_parameters_svm['tol'],
                                                         coef0=best_parameters_svm['c'],
@@ -317,11 +351,12 @@ if __name__ == '__main__':
     predictions_svm = svm_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_svm, "SVM")
     saveModel(svm_model, 'svm')
+    print("SVM:", classification_report(y_test, predictions_svm, target_names=['Legit', 'Phishing']))
 
     # --- Random Forest ----
     # best_parameters_rf = determineRFkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, class_weights, seed)
     # print(best_parameters_rf)
-    best_parameters_rf = {'n': 50, 'bootstrap': False, 'max_depth': 9, 'max_features': 7, 'max_samples': None}  # ,  "min_samples_split": 25, "max_leaf_nodes": 35, "min_samples_leaf": 10}
+    best_parameters_rf = {'n': 100, 'bootstrap': False, 'max_depth': 9, 'max_features': 3, 'max_samples': None}  # ,  "min_samples_split": 25, "max_leaf_nodes": 35, "min_samples_leaf": 10}
 
     rf_model = RandomForestClassifier(n_estimators=best_parameters_rf['n'],
                                       max_depth=best_parameters_rf['max_depth'],
@@ -331,8 +366,8 @@ if __name__ == '__main__':
                                       max_features=best_parameters_rf['max_features'],
                                       bootstrap=best_parameters_rf['bootstrap'],
                                       max_samples=best_parameters_rf['max_samples'],
-                                      ccp_alpha=best_alpha_tree,
-                                      criterion=best_criterion_tree,
+                                      ccp_alpha=best_parameters_dt['alpha'],
+                                      criterion=best_parameters_dt['criterion'],
                                       class_weight=class_weights,
                                       random_state=seed
                                       )
@@ -340,32 +375,37 @@ if __name__ == '__main__':
     predictions_rf = rf_model.predict(x_test)
     displayConfusionMatrix(y_test, predictions_rf, "RF")
     saveModel(rf_model, 'random_forest')
-
+    print("RF:", classification_report(y_test, predictions_rf, target_names=['Legit', 'Phishing']))
 """
-
     # --- Multi-Layer Perceptron ----
     scaler = MinMaxScaler()
-    x_train_nn = scaler.fit_transform(x_train_v[0])
-    y_train_nn = np_utils.to_categorical(y_train_v[0], 2)
+    x_train_nn, y_train_nn, x_test_nn, _ = nn.get_data(x_training, y_training, x_test, y_test)
 
-    x_val_nn = scaler.fit_transform(x_val[0])
-    y_val_nn = np_utils.to_categorical(y_val[0], 2)
-
-    x_test_nn = scaler.transform(x_test)
-    nn_model = build_neural_network()
+    mlp_model = nn.build_optimal_nn(x_train_nn, y_train_nn, deep=False)
     callbacks_list = [
         # min_delta: Minimum change in the monitored quantity to qualify as an improvement
         # patience: Number of epochs with no improvement after which training will be stopped
         # restore_best_weights: Whether to restore model weights from the epoch with the best value of val_loss
         callbacks.EarlyStopping(monitor='val_loss', min_delta=0.0001, patience=10, restore_best_weights=True)
     ]
-    nn_model.fit(x_train_nn, y_train_nn, batch_size=32, epochs=50, verbose=2, callbacks=callbacks_list,
-                 shuffle=True, validation_data=(x_val_nn, y_val_nn))
-    # nn_model.fit(x=tf.convert_to_tensor(np.asarray(x_training).astype('int32')),
-    #              y=tf.convert_to_tensor(np.asarray(y_training).astype('int32')),
-    #              batch_size=32, epochs=50, validation_split=0.2)
-    predictions_nn = nn_model.predict(x_test_nn, verbose=1, use_multiprocessing=True, workers=12)
+    mlp_model.compile(loss=keras.losses.BinaryCrossentropy(), metrics=['accuracy'])
+    mlp_model.fit(x_train_nn, y_train_nn, epochs=100, verbose=2, callbacks=callbacks_list,
+                 shuffle=True, validation_split=0.2, class_weight=class_weights)
+    predictions_nn = mlp_model.predict(x_test_nn, verbose=1, use_multiprocessing=True, workers=12)
     predictions_nn = np.argmax(predictions_nn, axis=1)
 
-    displayConfusionMatrix(np.asarray(y_test).astype('int32'), predictions_nn, "MLP")
-    nn_model.save(os.path.join("output", "mlp"))
+    displayConfusionMatrix(y_test, predictions_nn, "MLP")
+    mlp_model.save(os.path.join("output", "mlp"))
+    print("MLP:", classification_report(y_test, predictions_nn, target_names=['Legit', 'Phishing']))
+
+    # --- Deep NN ----
+    dnn_model = nn.build_optimal_nn(x_train_nn, y_train_nn, deep=True)
+    dnn_model.compile(loss=keras.losses.BinaryCrossentropy(), metrics=['accuracy'])
+    dnn_model.fit(x_train_nn, y_train_nn, epochs=100, verbose=2, callbacks=callbacks_list,
+                 shuffle=True, validation_split=0.2, class_weight=class_weights)
+    predictions_dnn = dnn_model.predict(x_test_nn, verbose=1, use_multiprocessing=True, workers=12)
+    predictions_dnn = np.argmax(predictions_dnn, axis=1)
+
+    displayConfusionMatrix(y_test, predictions_dnn, "DNN")
+    dnn_model.save(os.path.join("output", "dnn"))
+    print("DNN:", classification_report(y_test, predictions_dnn, target_names=['Legit', 'Phishing']))
