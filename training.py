@@ -271,7 +271,7 @@ def displayConfusionMatrix(y_ground_truth, y_predicted, title=""):
 
 
 def saveModel(model, file_name):
-    with open(os.path.join('output', file_name+'.obj'), 'wb') as write_file:
+    with open(os.path.join('models', file_name+'.obj'), 'wb') as write_file:
         pickle.dump(model, write_file)
 
 
@@ -395,7 +395,7 @@ if __name__ == '__main__':
     predictions_nn = np.argmax(predictions_nn, axis=1)
 
     displayConfusionMatrix(y_test, predictions_nn, "MLP")
-    mlp_model.save(os.path.join("output", "mlp"))
+    mlp_model.save(os.path.join("models", "mlp"))
     print("MLP:", classification_report(y_test, predictions_nn, target_names=['Legit', 'Phishing']))
 
     # --- Deep NN ----
@@ -407,5 +407,5 @@ if __name__ == '__main__':
     predictions_dnn = np.argmax(predictions_dnn, axis=1)
 
     displayConfusionMatrix(y_test, predictions_dnn, "DNN")
-    dnn_model.save(os.path.join("output", "dnn"))
+    dnn_model.save(os.path.join("models", "dnn"))
     print("DNN:", classification_report(y_test, predictions_dnn, target_names=['Legit', 'Phishing']))

@@ -3,6 +3,7 @@ from lime import lime_tabular
 from matplotlib import pyplot
 from heapq import nsmallest
 from data import load_data
+from tensorflow import keras
 import warnings
 import shap
 import numpy as np
@@ -12,7 +13,7 @@ import json
 
 
 def load_model(file_name):
-    with open(os.path.join('output', file_name), 'rb') as file:
+    with open(os.path.join('models', file_name), 'rb') as file:
         return pickle.load(file)
 
 
@@ -25,8 +26,13 @@ def show_explanation(explanation, title=""):
 
 
 def explain(explainer, instance_to_explain, model, num_features, print_out=True):
-    explanation = explainer.explain_instance(instance_to_explain, model.predict_proba, num_features=num_features)
-    pred = model.predict_proba(instance_to_explain.values.reshape(1, -1))
+    if hasattr(model, 'predict_proba'):
+        explanation = explainer.explain_instance(instance_to_explain, model.predict_proba, num_features=num_features)
+        pred = model.predict_proba(instance_to_explain.values.astype(int).reshape(1, -1))
+    else:
+        explanation = explainer.explain_instance(instance_to_explain, model.predict, num_features=num_features)
+        pred = model.predict(instance_to_explain.values.astype(int).reshape(1, -1))
+
     if print_out:
         print(f"Predictions: Legit = {pred[0][0]}, Phishing = {pred[0][1]}")
         print(explanation.as_list())
@@ -178,32 +184,24 @@ if __name__ == "__main__":
     svm_model = load_model('svm.obj')
     rf_model = load_model('random_forest.obj')
     lr_model = load_model('logistic_regression.obj')
-    # TODO: Load mlp with keras
+    mlp_model = keras.models.load_model('models/mlp')
+    dnn_model = keras.models.load_model('models/dnn')
 
     start_test = 0
     end_test = len(y_test)
-
-    tree_global_explanation(dt_model)
-
     # tree_global_explanation(dt_model)
     # tree_global_feature_importance_to_file(dt_model, x_test, start_test, end_test)
     # LIME Explanations for single instances of the test set
     lime_explainer = lime_tabular.LimeTabularExplainer(x_training.values, mode="classification",
                                                        class_names=['Legit', 'Phishing'],
                                                        feature_names=feature_names, random_state=seed)
-
-    # lime_explain(dt_model, lime_explainer, x_test, y_test, 'decision_tree', start_test, end_test)
-    # lime_explain(svm_model, lime_explainer, x_test, y_test, 'svm', start_test, end_test)
-    # lime_explain(rf_model, lime_explainer, x_test, y_test, 'random_forest', start_test, end_test)
-    # lime_explain(lr_model, lime_explainer, x_test, y_test, 'logistic_regression', start_test, end_test)
-
     # explanation_rf_1, predictions_instance_1 = explain_without_features(lime_explainer, instance,
     #                                                                    rf_model, explanation_rf,
     #                                                                    num_features=len(feature_names),
     #                                                                    features_to_remove=3)
     # save_explanation_to_file(explanation_rf_1, 'random_forest_1')
     # print('Difference:', predictions_instance[0] - predictions_instance_1[0])
-
+    """
     # ----- SHAP -----
     X_idx = 2
     # X100 = shap.utils.sample(x_training, 100)
@@ -217,20 +215,25 @@ if __name__ == "__main__":
     shap_values = explainer(x_test.iloc[0:1000, :])
     shap.summary_plot(shap_values, x_test.iloc[0:1000, :])
 
-
-    """explainer = shap.KernelExplainer(svm_model.predict, X100, link='identity')
+    """
+    """
+    explainer = shap.KernelExplainer(svm_model.predict, X100, link='identity')
     shap_values = explainer.shap_values(X=x_test.iloc[X_idx:X_idx+1, :], nsamples=100)
     shap.summary_plot(shap_values=shap_values, features=feature_names)"""
 
-
-
     # ---- Global feature importance -----
+
     # DECISION TREE
     tree_global_feature_importance_to_file(clf=dt_model, x_test=x_test, feature_names=feature_names,
                                            start_index=start_test, end_index=end_test, n_top_features=3)
 
+    #LOGISTIC REGRESSION
+    # explanations_lr, _ = lime_explain(lr_model, lime_explainer, x_test, y_test, 'lr',
+    #                                    start_test, end_test, show=False, save_file=False)
+    # lime_global_feature_importance_to_file(explanations_lr, feature_names, 'lr')
+
     # SVM
-    explanations_svm, _ = lime_explain(svm_model, lime_explainer, x_test, y_test, 'svm', 
+    explanations_svm, _ = lime_explain(svm_model, lime_explainer, x_test, y_test, 'svm',
                                        start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_svm, feature_names, 'svm')
 
@@ -239,9 +242,13 @@ if __name__ == "__main__":
                                       start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_rf, feature_names, 'rf')
 
-    """    
-    #LOGISTIC REGRESSION
-    # explanations_lr, _ = lime_explain(lr_model, lime_explainer, x_test, y_test, 'lr', 
-                                        start_test, end_test, show=False, save_file=False)
-    # lime_global_feature_importance_to_file(explanations_lr, feature_names, 'lr')
-"""
+    # Multi-Layer Perceptron
+    explanations_mlp, _ = lime_explain(mlp_model, lime_explainer, x_test, y_test, 'mlp',
+                                       start_test, end_test, show=False, save_file=False)
+    lime_global_feature_importance_to_file(explanations_mlp, feature_names, 'mlp')
+
+    # Deep Neural Network
+    explanations_dnn, _ = lime_explain(dnn_model, lime_explainer, x_test, y_test, 'dnn',
+                                       start_test, end_test, show=False, save_file=False)
+    lime_global_feature_importance_to_file(explanations_dnn, feature_names, 'dnn')
+
