@@ -5,6 +5,7 @@ from heapq import nsmallest
 from data import load_data
 from tensorflow import keras
 import warnings
+import pandas as pd
 import shap
 import numpy as np
 import os
@@ -56,7 +57,7 @@ def save_explanation_to_file(explanation, file_name, folder_name=None):
     explanation.save_to_file(os.path.join(base_path, file_name+".html"))
 
 
-def tree_global_explanation(tree_model):
+def tree_global_explanation_static(tree_model):
     # Decision tree feature importance based on the Gini index (Gini importance)
     # Importance of a feature is computed as the total reduction of the criterion brought by that feature weighted by
     # the probability of reaching that node (# of samples that reach the node, divided by the tot # of samples)
@@ -138,6 +139,12 @@ def tree_global_feature_importance_to_file(clf, x_test, feature_names, start_ind
     return feature_presence
 
 
+def explain_logistic_regression_static(model, feature_names):
+    df = pd.DataFrame({'coeff': model.coef_[0]},
+                      index=feature_names)
+    print(df)
+
+
 def lime_explain(model, lime_explainer, x_test, y_test, model_name='lime', start_index=0, end_index=10, show=True, save_file=True):
     warnings.filterwarnings(action='ignore', category=UserWarning)
     explanations = []
@@ -157,17 +164,42 @@ def lime_explain(model, lime_explainer, x_test, y_test, model_name='lime', start
     return explanations, predictions
 
 
-# Calcola percentuale di quanto ciascuna feature viene tenuta in conto durante le explanation di LIME
-# Il "miglior" modello è quello con più eterogeneità nelle features
-def lime_global_feature_importance_to_file(explanations, feature_names, file_name):
+def lime_global_feature_importance_to_file(explanations, feature_names, file_name, n_top_features=3):
+    """
+    Calcola percentuale di quanto ciascuna feature viene tenuta in conto durante le explanation di LIME
+       Il "miglior" modello è quello con più eterogeneità nelle features
+    """
     feature_presence = {f: 0 for f in feature_names}
     for e in explanations:
-        for i in range(0, 3):  # take the top 3 features
+        for i in range(0, n_top_features):  # take the top N features
             top_feature = e[i][0].split(' ')[0]
             if top_feature[0].isdigit():
                 top_feature = e[i][0].split(' ')[2]
             feature_presence[top_feature] += 1  # increase the feature by one if it is in the top 3 features
     base_path = os.path.join('output', 'feature_importance', 'lime')
+    file_path = os.path.join(base_path, file_name+'.json')
+    mode = 'w' if os.path.exists(file_path) else 'x'
+    with open(file_path, mode) as out:
+        out.write(json.dumps(feature_presence))
+
+
+def shap_global_feature_importance(model, masker, x_test, feature_names, file_name, seed, print_summary=True, n_top_features=3):
+    explainer = shap.Explainer(model.predict, masker, seed=seed)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        shap_values = explainer(x_test.astype(int), silent=True)
+
+    if print_summary:
+        shap.summary_plot(shap_values, x_test.astype(int))
+
+    feature_presence = {f: 0 for f in feature_names}
+    for x in shap_values:
+        x = x.values
+        indexes_sort = np.argsort(x)
+        for i in range(0, n_top_features):  # take the top N features
+            top_feature = feature_names[indexes_sort[-i]]  # the indexes are the feats (-i => arr sort in asc. order)
+            feature_presence[top_feature] += 1  # increase the feature by one if it is in the top 3 features
+    base_path = os.path.join('output', 'feature_importance', 'shap')
     file_path = os.path.join(base_path, file_name+'.json')
     mode = 'w' if os.path.exists(file_path) else 'x'
     with open(file_path, mode) as out:
@@ -189,48 +221,24 @@ if __name__ == "__main__":
 
     start_test = 0
     end_test = len(y_test)
-    # tree_global_explanation(dt_model)
-    # tree_global_feature_importance_to_file(dt_model, x_test, start_test, end_test)
-    # LIME Explanations for single instances of the test set
+
+    # DECISION TREE
+    # tree_global_explanation_static(dt_model)
+    # tree_global_feature_importance_to_file(clf=dt_model, x_test=x_test, feature_names=feature_names,
+    #                                        start_index=start_test, end_index=end_test, n_top_features=3)
+
+    # Logistic Regression
+    # explain_logistic_regression_static(lr_model, feature_names)
+
+    """
+    # ---- LIME - Global feature importance -----
     lime_explainer = lime_tabular.LimeTabularExplainer(x_training.values, mode="classification",
                                                        class_names=['Legit', 'Phishing'],
                                                        feature_names=feature_names, random_state=seed)
-    # explanation_rf_1, predictions_instance_1 = explain_without_features(lime_explainer, instance,
-    #                                                                    rf_model, explanation_rf,
-    #                                                                    num_features=len(feature_names),
-    #                                                                    features_to_remove=3)
-    # save_explanation_to_file(explanation_rf_1, 'random_forest_1')
-    # print('Difference:', predictions_instance[0] - predictions_instance_1[0])
-    """
-    # ----- SHAP -----
-    X_idx = 2
-    # X100 = shap.utils.sample(x_training, 100)
-    x_training = x_training * 1
-    x_test = x_test * 1
-    # f = lambda x: svm_model.predict_proba(x)[:, 1]
-    med = x_training.median().values.reshape((1, x_training.shape[1]))
-
-    # TODO: SHAP
-    explainer = shap.Explainer(svm_model.predict, med)
-    shap_values = explainer(x_test.iloc[0:1000, :])
-    shap.summary_plot(shap_values, x_test.iloc[0:1000, :])
-
-    """
-    """
-    explainer = shap.KernelExplainer(svm_model.predict, X100, link='identity')
-    shap_values = explainer.shap_values(X=x_test.iloc[X_idx:X_idx+1, :], nsamples=100)
-    shap.summary_plot(shap_values=shap_values, features=feature_names)"""
-
-    # ---- Global feature importance -----
-
-    # DECISION TREE
-    tree_global_feature_importance_to_file(clf=dt_model, x_test=x_test, feature_names=feature_names,
-                                           start_index=start_test, end_index=end_test, n_top_features=3)
-
-    #LOGISTIC REGRESSION
-    # explanations_lr, _ = lime_explain(lr_model, lime_explainer, x_test, y_test, 'lr',
-    #                                    start_test, end_test, show=False, save_file=False)
-    # lime_global_feature_importance_to_file(explanations_lr, feature_names, 'lr')
+    # LOGISTIC REGRESSION
+    explanations_lr, _ = lime_explain(lr_model, lime_explainer, x_test, y_test, 'lr',
+                                      start_test, end_test, show=False, save_file=False)
+    lime_global_feature_importance_to_file(explanations_lr, feature_names, 'lr')
 
     # SVM
     explanations_svm, _ = lime_explain(svm_model, lime_explainer, x_test, y_test, 'svm',
@@ -251,4 +259,29 @@ if __name__ == "__main__":
     explanations_dnn, _ = lime_explain(dnn_model, lime_explainer, x_test, y_test, 'dnn',
                                        start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_dnn, feature_names, 'dnn')
+    """
 
+    # ----- SHAP -----
+    """# Local explanation
+    X_idx = 2    
+    X100 = shap.utils.sample(x_training, 100)
+    explainer = shap.KernelExplainer(svm_model.predict, X100, link='identity')
+    shap_values = explainer.shap_values(X=x_test.iloc[X_idx:X_idx+1, :], nsamples=100)
+    shap.summary_plot(shap_values=shap_values, features=feature_names)"""
+
+    masker_med = x_training.median().values.reshape((1, x_training.shape[1]))
+
+    # LOGISTIC REGRESSION
+    shap_global_feature_importance(lr_model, masker_med, x_test, feature_names, 'lr', seed)
+
+    # SVM
+    shap_global_feature_importance(svm_model, masker_med, x_test, feature_names, 'svm', seed)
+
+    # RANDOM FOREST
+    shap_global_feature_importance(rf_model, masker_med, x_test, feature_names, 'rf', seed)
+
+    # Multi-Layer Perceptron
+    shap_global_feature_importance(mlp_model, masker_med, x_test, feature_names, 'mlp', seed)
+
+    # Deep Neural Network
+    shap_global_feature_importance(dnn_model, masker_med, x_test, feature_names, 'dnn', seed)
