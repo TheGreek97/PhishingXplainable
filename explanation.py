@@ -183,18 +183,24 @@ def lime_global_feature_importance_to_file(explanations, feature_names, file_nam
         out.write(json.dumps(feature_presence))
 
 
-def shap_global_feature_importance(model, masker, x_test, feature_names, file_name, seed, print_summary=True, n_top_features=3):
-    explainer = shap.Explainer(model.predict, masker, seed=seed)
+def shap_global_feature_importance(model, masker, x_test, feature_names, file_name, seed, print_summary=True, n_top_features=3, nn=False):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        shap_values = explainer(x_test.astype(int), silent=True)
+        if nn:
+            explainer = shap.KernelExplainer(model.predict, masker, seed=seed)
+            shap_values = explainer.shap_values(x_test.astype(int), nsamples=500)
+            shap_values = shap_values[1]
+        else:
+            explainer = shap.Explainer(model.predict, masker, seed=seed)
+            shap_values = explainer(x_test.astype(int), silent=True)
 
     if print_summary:
         shap.summary_plot(shap_values, x_test.astype(int))
-
     feature_presence = {f: 0 for f in feature_names}
     for x in shap_values:
-        x = x.values
+        if not nn:
+            x = x.values
+        x = abs(x)
         indexes_sort = np.argsort(x)
         for i in range(0, n_top_features):  # take the top N features
             top_feature = feature_names[indexes_sort[-i]]  # the indexes are the feats (-i => arr sort in asc. order)
@@ -281,7 +287,7 @@ if __name__ == "__main__":
     shap_global_feature_importance(rf_model, masker_med, x_test, feature_names, 'rf', seed)
 
     # Multi-Layer Perceptron
-    shap_global_feature_importance(mlp_model, masker_med, x_test, feature_names, 'mlp', seed)
+    shap_global_feature_importance(mlp_model, masker_med, x_test, feature_names, 'mlp', seed, print_summary=False, nn=True)
 
     # Deep Neural Network
-    shap_global_feature_importance(dnn_model, masker_med, x_test, feature_names, 'dnn', seed)
+    shap_global_feature_importance(dnn_model, masker_med, x_test, feature_names, 'dnn', seed, print_summary=False, nn=True)

@@ -378,7 +378,6 @@ if __name__ == '__main__':
     print("RF:", classification_report(y_test, predictions_rf, target_names=['Legit', 'Phishing']))
 """
     # --- Multi-Layer Perceptron ----
-    scaler = MinMaxScaler()
     x_train_nn, y_train_nn, x_test_nn, _ = nn.get_data(x_training, y_training, x_test, y_test)
 
     mlp_model = nn.build_optimal_nn(x_train_nn, y_train_nn, deep=False)

@@ -2,6 +2,8 @@ import os
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 
 
 def load_data(test_size=0.2, seed=0):
@@ -28,6 +30,12 @@ def load_data(test_size=0.2, seed=0):
     # Fill eventual NaN values
     for col in x_data.columns:
         x_data[col].fillna(0)
+    std_scaler = StandardScaler()
+    normalize_scaler = MinMaxScaler()
+    columns = x_data.columns
+    df_scaled = normalize_scaler.fit_transform(x_data.to_numpy())
+    df_scaled = std_scaler.fit_transform(df_scaled)
+    x_data = pd.DataFrame(df_scaled, columns=columns)
 
     x_tr, y_tr, x_tst, y_tst = train_test_split(x_data, y_data, stratify=y_data, test_size=test_size, random_state=seed)
     return x_tr, y_tr, x_tst, y_tst, feature_names
