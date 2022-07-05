@@ -1,0 +1,2 @@
+Files with "_5" are related to models with class weight={0:1, 1:5},
+while the others are related to models with class weights coming from a tuning process

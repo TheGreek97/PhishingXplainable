@@ -145,7 +145,7 @@ def explain_logistic_regression_static(model, feature_names):
     print(df)
 
 
-def lime_explain(model, lime_explainer, x_test, y_test, model_name='lime', start_index=0, end_index=10, show=True, save_file=True):
+def lime_explain(model, lime_explainer, x_test, y_test, model_name='lime', start_index=0, end_index=10, show=False, save_file=False):
     warnings.filterwarnings(action='ignore', category=UserWarning)
     explanations = []
     predictions = []
@@ -173,7 +173,7 @@ def lime_global_feature_importance_to_file(explanations, feature_names, file_nam
     for e in explanations:
         for i in range(0, n_top_features):  # take the top N features
             top_feature = e[i][0].split(' ')[0]
-            if top_feature[0].isdigit():
+            if top_feature[0].isdigit() or top_feature[1].isdigit():
                 top_feature = e[i][0].split(' ')[2]
             feature_presence[top_feature] += 1  # increase the feature by one if it is in the top 3 features
     base_path = os.path.join('output', 'feature_importance', 'lime')
@@ -228,19 +228,27 @@ if __name__ == "__main__":
     start_test = 0
     end_test = len(y_test)
 
+
+    masker_med = x_training.median().values.reshape((1, x_training.shape[1]))
+    shap_global_feature_importance(rf_model, masker_med, x_test, feature_names, 'rf', seed)
+
     # DECISION TREE
-    # tree_global_explanation_static(dt_model)
-    # tree_global_feature_importance_to_file(clf=dt_model, x_test=x_test, feature_names=feature_names,
-    #                                        start_index=start_test, end_index=end_test, n_top_features=3)
+    tree_global_explanation_static(dt_model)
+    tree_global_feature_importance_to_file(clf=dt_model, x_test=x_test, feature_names=feature_names,
+                                           start_index=start_test, end_index=end_test, n_top_features=3)
 
     # Logistic Regression
-    # explain_logistic_regression_static(lr_model, feature_names)
+    explain_logistic_regression_static(lr_model, feature_names)
 
-    """
     # ---- LIME - Global feature importance -----
     lime_explainer = lime_tabular.LimeTabularExplainer(x_training.values, mode="classification",
                                                        class_names=['Legit', 'Phishing'],
                                                        feature_names=feature_names, random_state=seed)
+    # DECISION TREE
+    explanations_dt, _ = lime_explain(dt_model, lime_explainer, x_test, y_test, 'dt',
+                                      start_test, end_test, show=False, save_file=False)
+    lime_global_feature_importance_to_file(explanations_dt, feature_names, 'dt')
+
     # LOGISTIC REGRESSION
     explanations_lr, _ = lime_explain(lr_model, lime_explainer, x_test, y_test, 'lr',
                                       start_test, end_test, show=False, save_file=False)
@@ -265,9 +273,8 @@ if __name__ == "__main__":
     explanations_dnn, _ = lime_explain(dnn_model, lime_explainer, x_test, y_test, 'dnn',
                                        start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_dnn, feature_names, 'dnn')
-    """
 
-    # ----- SHAP -----
+    # ----- SHAP - Global feature importance -----
     """# Local explanation
     X_idx = 2    
     X100 = shap.utils.sample(x_training, 100)
@@ -276,6 +283,9 @@ if __name__ == "__main__":
     shap.summary_plot(shap_values=shap_values, features=feature_names)"""
 
     masker_med = x_training.median().values.reshape((1, x_training.shape[1]))
+
+    # DECISION TREE
+    shap_global_feature_importance(dt_model, masker_med, x_test, feature_names, 'dt', seed)
 
     # LOGISTIC REGRESSION
     shap_global_feature_importance(lr_model, masker_med, x_test, feature_names, 'lr', seed)
@@ -291,3 +301,6 @@ if __name__ == "__main__":
 
     # Deep Neural Network
     shap_global_feature_importance(dnn_model, masker_med, x_test, feature_names, 'dnn', seed, print_summary=False, nn=True)
+
+    # TODO EBM (last)
+
