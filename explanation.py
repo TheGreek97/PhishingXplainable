@@ -4,6 +4,7 @@ from matplotlib import pyplot
 from heapq import nsmallest
 from data import load_data
 from tensorflow import keras
+from training import displayConfusionMatrix
 
 import ebm
 import warnings
@@ -222,6 +223,7 @@ if __name__ == "__main__":
     lr_model = load_model('logistic_regression.obj')
     mlp_model = keras.models.load_model('models/mlp')
     dnn_model = keras.models.load_model('models/dnn')
+    ebm_model = load_model('ebm.obj')
 
     start_test = 0
     end_test = len(y_test)
@@ -276,7 +278,7 @@ if __name__ == "__main__":
     explainer = shap.KernelExplainer(svm_model.predict, X100, link='identity')
     shap_values = explainer.shap_values(X=x_test.iloc[X_idx:X_idx+1, :], nsamples=100)
     shap.summary_plot(shap_values=shap_values, features=feature_names)"""
-
+    """
     masker_med = x_training.median().values.reshape((1, x_training.shape[1]))
     
     # DECISION TREE
@@ -296,13 +298,8 @@ if __name__ == "__main__":
 
     # Deep Neural Network
     shap_global_feature_importance(dnn_model, masker_med, x_test, feature_names, 'dnn', seed, print_summary=False, nn=True)
-
+    """
     # ---- EBM -----
-    ebm_model = ebm.train(x_train=x_training, y_train=y_training, feature_names=feature_names, seed=seed)
-    # ebm_global_explanation = ebm.global_explanation(ebm_model)
-    save_folder = os.path.join('output', 'explanations', 'ebm')
-    # for i in range(0, 18):
-    # ebm_global_explanation.visualize().write_html(os.path.join(save_folder, 'ebm.html'))
-
+    ebm_global_explanation = ebm.global_explanation(ebm_model)
     ebm_local_explanation = ebm.ebm_global_feature_importance(ebm_model, x_test=x_test, y_test=y_test,
                                                               feature_names=feature_names)

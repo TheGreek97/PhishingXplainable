@@ -3,7 +3,6 @@ import os.path
 import pickle
 import matplotlib.pyplot as plt
 
-
 import sklearn.tree as tree
 import sklearn.svm as svm
 from sklearn.linear_model import LogisticRegression
@@ -19,6 +18,7 @@ import tensorflow as tf
 from tensorflow import keras
 from keras import callbacks
 import nn
+import ebm
 from data import load_data, stratifiedKFold
 
 
@@ -445,6 +445,13 @@ if __name__ == '__main__':
     displayConfusionMatrix(y_test, predictions_dnn, "DNN")
     dnn_model.save(os.path.join("models", "dnn"))
     print("DNN:", classification_report(y_test, predictions_dnn, target_names=['Legit', 'Phishing']))
+
+    # ---- EBM -----
+    ebm_model = ebm.train(x_train=x_training, y_train=y_training, feature_names=feature_names, seed=seed)
+    ebm_predictions = ebm_model.predict(x_test)
+    displayConfusionMatrix(y_test, ebm_predictions, "EBM")
+    saveModel(ebm_model, 'ebm')
+    print("EBM:", classification_report(y_test, ebm_predictions, target_names=['Legit', 'Phishing']))
 
     """
         # --- AdaBoost classifier ---
