@@ -4,6 +4,8 @@ from matplotlib import pyplot
 from heapq import nsmallest
 from data import load_data
 from tensorflow import keras
+
+import ebm
 import warnings
 import pandas as pd
 import shap
@@ -16,14 +18,6 @@ import json
 def load_model(file_name):
     with open(os.path.join('models', file_name), 'rb') as file:
         return pickle.load(file)
-
-
-def show_explanation(explanation, title=""):
-    explanation_figure = explanation.as_pyplot_figure()
-    explanation_figure.set_size_inches(20, 18)
-    explanation_figure.set_dpi(100)
-    plt.title(title)
-    plt.show()
 
 
 def explain(explainer, instance_to_explain, model, num_features, print_out=True):
@@ -156,7 +150,11 @@ def lime_explain(model, lime_explainer, x_test, y_test, model_name='lime', start
         folder_name = str(i)+"_"+str(y_test.iloc[i].item())
         explanation_model, prediction = explain(lime_explainer, instance, model, len(feature_names))
         if show:
-            show_explanation(explanation_model, "Explanation " + model_name)
+            explanation_figure = explanation_model.as_pyplot_figure()
+            explanation_figure.set_size_inches(20, 18)
+            explanation_figure.set_dpi(100)
+            plt.title("Explanation " + model_name)
+            plt.show()
         if save_file:
             save_explanation_to_file(explanation_model, model_name, folder_name=folder_name)
         explanations.append(explanation_model.as_list())
@@ -202,7 +200,7 @@ def shap_global_feature_importance(model, masker, x_test, feature_names, file_na
             x = x.values
         x = abs(x)
         indexes_sort = np.argsort(x)
-        for i in range(0, n_top_features):  # take the top N features
+        for i in range(1, n_top_features+1):  # take the top N features
             top_feature = feature_names[indexes_sort[-i]]  # the indexes are the feats (-i => arr sort in asc. order)
             feature_presence[top_feature] += 1  # increase the feature by one if it is in the top 3 features
     base_path = os.path.join('output', 'feature_importance', 'shap')
@@ -228,10 +226,7 @@ if __name__ == "__main__":
     start_test = 0
     end_test = len(y_test)
 
-
-    masker_med = x_training.median().values.reshape((1, x_training.shape[1]))
-    shap_global_feature_importance(rf_model, masker_med, x_test, feature_names, 'rf', seed)
-
+    """
     # DECISION TREE
     tree_global_explanation_static(dt_model)
     tree_global_feature_importance_to_file(clf=dt_model, x_test=x_test, feature_names=feature_names,
@@ -273,7 +268,7 @@ if __name__ == "__main__":
     explanations_dnn, _ = lime_explain(dnn_model, lime_explainer, x_test, y_test, 'dnn',
                                        start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_dnn, feature_names, 'dnn')
-
+    """
     # ----- SHAP - Global feature importance -----
     """# Local explanation
     X_idx = 2    
@@ -283,7 +278,7 @@ if __name__ == "__main__":
     shap.summary_plot(shap_values=shap_values, features=feature_names)"""
 
     masker_med = x_training.median().values.reshape((1, x_training.shape[1]))
-
+    
     # DECISION TREE
     shap_global_feature_importance(dt_model, masker_med, x_test, feature_names, 'dt', seed)
 
@@ -302,5 +297,12 @@ if __name__ == "__main__":
     # Deep Neural Network
     shap_global_feature_importance(dnn_model, masker_med, x_test, feature_names, 'dnn', seed, print_summary=False, nn=True)
 
-    # TODO EBM (last)
+    # ---- EBM -----
+    ebm_model = ebm.train(x_train=x_training, y_train=y_training, feature_names=feature_names, seed=seed)
+    # ebm_global_explanation = ebm.global_explanation(ebm_model)
+    save_folder = os.path.join('output', 'explanations', 'ebm')
+    # for i in range(0, 18):
+    # ebm_global_explanation.visualize().write_html(os.path.join(save_folder, 'ebm.html'))
 
+    ebm_local_explanation = ebm.ebm_global_feature_importance(ebm_model, x_test=x_test, y_test=y_test,
+                                                              feature_names=feature_names)
