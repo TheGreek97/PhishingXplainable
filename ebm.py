@@ -39,11 +39,6 @@ def train(x_train, y_train, feature_names, seed):
     return ebm_model
 
 
-def global_explanation(model):
-    ebm_global = model.explain_global()
-    return ebm_global
-
-
 def ebm_global_feature_importance(model, x_test, y_test, feature_names, n_top_features=3):
     feature_presence = {f: 0 for f in feature_names}
     length = len(x_test)

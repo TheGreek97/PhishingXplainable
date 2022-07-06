@@ -400,12 +400,12 @@ if __name__ == '__main__':
     mlp_model.compile(loss=keras.losses.BinaryCrossentropy(), metrics=['accuracy'])
     mlp_model.fit(x_train_nn, y_train_nn, epochs=100, verbose=2, callbacks=callbacks_list,
                   shuffle=True, validation_split=0.2, class_weight=class_weights_mlp)
-    predictions_nn = mlp_model.predict(x_test_nn, verbose=1, use_multiprocessing=True, workers=12)
-    predictions_nn = np.argmax(predictions_nn, axis=1)
+    predictions_mlp = mlp_model.predict(x_test_nn, verbose=1, use_multiprocessing=True, workers=12)
+    predictions_mlp = np.argmax(predictions_mlp, axis=1)
 
-    displayConfusionMatrix(y_test, predictions_nn, "MLP")
+    displayConfusionMatrix(y_test, predictions_mlp, "MLP")
     mlp_model.save(os.path.join("models", "mlp"))
-    print("MLP:", classification_report(y_test, predictions_nn, target_names=['Legit', 'Phishing']))
+    print("MLP:", classification_report(y_test, predictions_mlp, target_names=['Legit', 'Phishing']))
 
     # --- Deep NN ----
     dnn_model, _ = nn.build_optimal_nn(x_train_v, x_val, y_train_v, y_val, deep=True)

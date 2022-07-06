@@ -228,7 +228,6 @@ if __name__ == "__main__":
     start_test = 0
     end_test = len(y_test)
 
-    """
     # DECISION TREE
     tree_global_explanation_static(dt_model)
     tree_global_feature_importance_to_file(clf=dt_model, x_test=x_test, feature_names=feature_names,
@@ -270,7 +269,7 @@ if __name__ == "__main__":
     explanations_dnn, _ = lime_explain(dnn_model, lime_explainer, x_test, y_test, 'dnn',
                                        start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_dnn, feature_names, 'dnn')
-    """
+
     # ----- SHAP - Global feature importance -----
     """# Local explanation
     X_idx = 2    
@@ -278,7 +277,7 @@ if __name__ == "__main__":
     explainer = shap.KernelExplainer(svm_model.predict, X100, link='identity')
     shap_values = explainer.shap_values(X=x_test.iloc[X_idx:X_idx+1, :], nsamples=100)
     shap.summary_plot(shap_values=shap_values, features=feature_names)"""
-    """
+
     masker_med = x_training.median().values.reshape((1, x_training.shape[1]))
     
     # DECISION TREE
@@ -298,8 +297,10 @@ if __name__ == "__main__":
 
     # Deep Neural Network
     shap_global_feature_importance(dnn_model, masker_med, x_test, feature_names, 'dnn', seed, print_summary=False, nn=True)
-    """
+
     # ---- EBM -----
-    ebm_global_explanation = ebm.global_explanation(ebm_model)
+    ebm_global_explanation = ebm_model.explain_global()
+    ebm_local = ebm_model.explain_local(x_test.iloc[:4], y_test.iloc[:4])
+    ebm_local.visualize().write_html('output/explanations/ebm/4.html')
     ebm_local_explanation = ebm.ebm_global_feature_importance(ebm_model, x_test=x_test, y_test=y_test,
                                                               feature_names=feature_names)
