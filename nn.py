@@ -12,14 +12,14 @@ from sklearn.preprocessing import MinMaxScaler
 def get_data(x_train, y_train, x_test, y_test):
     scaler = MinMaxScaler()
 
-    x_train_nn = scaler.fit_transform(x_train)
-    y_train_nn = np_utils.to_categorical(y_train, 2)
+    x_train_nn = [scaler.fit_transform(x) for x in x_train]
+    y_train_nn = [np_utils.to_categorical(y, 2) for y in y_train]
 
     # x_val_nn = scaler.fit_transform(x_val[0])
     # y_val_nn = np_utils.to_categorical(y_val[0], 2)
 
-    x_test_nn = scaler.transform(x_test)
-    y_test_nn = np_utils.to_categorical(y_test, 2)  # np.asarray(y_test).astype('int32')
+    x_test_nn = [scaler.transform(x) for x in x_test]
+    y_test_nn = [np_utils.to_categorical(y, 2) for y in y_test]  # np.asarray(y_test).astype('int32')
 
     return x_train_nn, y_train_nn, x_test_nn, y_test_nn  # x_val_nn, y_val_nn
 

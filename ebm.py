@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 def train(x_train, y_train, feature_names, seed):
     best_score = 0
     best_w = 1  # best w is 1
-    x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, stratify=y_train, test_size=0.2, random_state=seed)
+    # x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, stratify=y_train, test_size=0.2, random_state=seed)
     f1_scores = []
     weights = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 50]
     """for w in weights:

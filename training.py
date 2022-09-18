@@ -19,8 +19,17 @@ from tensorflow import keras
 from keras import callbacks
 import nn
 import ebm
-from data import load_data, stratifiedKFold
+from data import load_data, stratifiedKFold, load_data_no_split
 
+"""
+def het_score(x):
+    n_samples = 100
+    alpha_het = 0.5
+    sum = 0
+    for i in range(0,n_samples):
+
+    return sum/n_samples
+"""
 
 def showTree(model, feature_names):
     plt.figure(figsize=(200, 20))
@@ -252,12 +261,51 @@ def determineBoostkFoldConfiguration(x_train, x_val, y_train, y_val, model=None,
     return {"n": best_n, "learning_rate": best_learning_rate}
 """
 
-def displayConfusionMatrix(y_ground_truth, y_predicted, title=""):
+
+def displayConfusionMatrix(y_ground_truth, y_predicted, title="", save_file=False):
     cm = confusion_matrix(y_ground_truth, y_predicted)
     d = ConfusionMatrixDisplay(cm, display_labels=["Legit", "Phishing"])
     d.plot()
     plt.title(title)
     plt.show()
+
+
+def test_model(model, X_train, y_train, X_test, y_test, n_folds, print_=False, name='Results'):
+    metrics = []
+    for k in range(0, n_folds):
+        model.fit(X_train[k], y_train[k])
+        predictions = model.predict(X_test[k])
+        metrics.append(
+            classification_report(y_test[k], predictions, target_names=['Legit', 'Phishing'], output_dict=True))
+        if print_:
+            displayConfusionMatrix(y_test[k], predictions, name)
+            print(name+": ", classification_report(y_test[k], predictions, target_names=['Legit', 'Phishing']))
+    metrics = get_avg_metrics(metrics, n_folds)
+    return metrics
+
+
+def get_avg_metrics(metrics, n=5):
+    f1_scores = []
+    accuracies = []
+    precisions = []
+    recalls = []
+    npvs = []
+    specificities = []
+    for result in metrics:
+        accuracies.append(result["accuracy"])
+        f1_scores.append(result["Phishing"]["f1-score"])
+        precisions.append(result["Phishing"]["precision"])
+        recalls.append(result["Phishing"]["recall"])
+        npvs.append(result["Legit"]["precision"])
+        specificities.append(result["Legit"]["recall"])
+    return {
+        "accuracy": sum(accuracies) / n,
+        "f1_score": sum(f1_scores) / n,
+        "precision": sum(precisions) / n,
+        "recall": sum(recalls) / n,
+        "npv": sum(npvs) / n,
+        "specificity": sum(specificities) / n,
+    }
 
 
 def saveModel(model, file_name):
@@ -270,13 +318,18 @@ if __name__ == '__main__':
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
-    x_training, x_test, y_training, y_test, feature_names = load_data(test_size=0.2, seed=seed)
-    # print("Shape :", x_training.shape)
-    # print(x_data.head())
+    # LOAD THE DATA
+    X, y, feature_names = load_data_no_split()
+    # print("Shape :", X.shape)
+    # print(X.head())
 
-    # - Stratified K-Fold
-    n_folds = 5
-    x_train_v, x_val, y_train_v, y_val = stratifiedKFold(data_x=x_training, data_y=y_training, n_folds=n_folds, seed=seed)
+    # - Stratified K-Fold for validation
+    x_train_v, _, y_train_v, _, _ = load_data(test_size=0.2, seed=seed)
+    n_folds = 10
+    x_train_v, x_val, y_train_v, y_val = stratifiedKFold(data_x=x_train_v, data_y=y_train_v, n_folds=n_folds, seed=seed)
+
+    # - Stratified K-Fold for testing
+    x_training, x_test, y_training, y_test = stratifiedKFold(data_x=X, data_y=y, n_folds=n_folds, seed=seed)
 
     # --- DECISION TREE ----
     # best_parameters_dt = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
@@ -289,27 +342,24 @@ if __name__ == '__main__':
                                            min_samples_leaf=best_parameters_dt["min_samples_leaf"],
                                            max_depth=best_parameters_dt["max_depth"])
 
-    dt_model.fit(x_training, y_training)
-    showTree(dt_model, feature_names)
-    predictions_tree = dt_model.predict(x_test)
-    displayConfusionMatrix(y_test, predictions_tree, "DT")
+    metrics_dt = test_model(dt_model, x_training, y_training, x_test, y_test, n_folds, print_=False, name='DT')
+    print(metrics_dt)
+    dt_model.fit(X, y)
+    # showTree(dt_model, feature_names)
     saveModel(dt_model, 'decision_tree')
-    print("DT:", classification_report(y_test, predictions_tree, target_names=['Legit', 'Phishing']))
 
-    # --- Logistic Regression ---
+    # --- LOGISTIC REGRESSION  ---
     # best_parameters_lr = determineLRkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
     # print(best_parameters_lr)
     best_parameters_lr = {'solver': 'lbfgs', 'c': 10, 'penalty': 'l2', 'class_weights': {0: 1, 1: 2}}
     lr_model = LogisticRegression(solver=best_parameters_lr["solver"], penalty=best_parameters_lr["penalty"],
                                   C=best_parameters_lr["c"], class_weight=best_parameters_lr["class_weights"],
                                   random_state=seed)
-    lr_model.fit(x_training, y_training.values.ravel())
-    predictions_lr = lr_model.predict(x_test)
-    displayConfusionMatrix(y_test, predictions_lr, "LR")
+    metrics_lr = test_model(lr_model, x_training, y_training, x_test, y_test, n_folds, print_=False, name='LR')
+    print(metrics_lr)
+    lr_model.fit(X, y)
     saveModel(lr_model, 'logistic_regression')
-    print("LR:", classification_report(y_test, predictions_lr, target_names=['Legit', 'Phishing']))
 
-    
     # --- SVM ----
     # best_parameters_svm = determineSVMkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
     # print(best_parameters_svm)
@@ -322,11 +372,10 @@ if __name__ == '__main__':
                                                         random_state=seed,
                                                         class_weight=best_parameters_svm["class_weights"],
                                                         probability=True))
-    svm_model.fit(x_training, y_training.values.ravel())
-    predictions_svm = svm_model.predict(x_test)
-    displayConfusionMatrix(y_test, predictions_svm, "SVM")
+    metrics_svm = test_model(svm_model, x_training, y_training, x_test, y_test, n_folds, print_=False, name='SVM')
+    print(metrics_svm)
+    svm_model.fit(X, y)
     saveModel(svm_model, 'svm')
-    print("SVM:", classification_report(y_test, predictions_svm, target_names=['Legit', 'Phishing']))
 
     # --- Random Forest ----
     # best_parameters_rf = determineRFkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
@@ -346,11 +395,10 @@ if __name__ == '__main__':
                                       class_weight=best_parameters_dt["class_weights"],
                                       random_state=seed
                                       )
-    rf_model.fit(x_training, y_training.values.ravel())
-    predictions_rf = rf_model.predict(x_test)
-    displayConfusionMatrix(y_test, predictions_rf, "RF")
+    metrics_rf = test_model(rf_model, x_training, y_training, x_test, y_test, n_folds, print_=False, name='RF')
+    print(metrics_rf)
+    rf_model.fit(X, y)
     saveModel(rf_model, 'random_forest')
-    print("RF:", classification_report(y_test, predictions_rf, target_names=['Legit', 'Phishing']))
 
 # --- Multi-Layer Perceptron ----
     x_train_nn, y_train_nn, x_test_nn, y_test_nn = nn.get_data(x_training, y_training, x_test, y_test)
@@ -398,14 +446,24 @@ if __name__ == '__main__':
     print("Best weight for recall: ", best_w_recall)"""
 
     mlp_model.compile(loss=keras.losses.BinaryCrossentropy(), metrics=['accuracy'])
-    mlp_model.fit(x_train_nn, y_train_nn, epochs=100, verbose=2, callbacks=callbacks_list,
-                  shuffle=True, validation_split=0.2, class_weight=class_weights_mlp)
-    predictions_mlp = mlp_model.predict(x_test_nn, verbose=1, use_multiprocessing=True, workers=12)
-    predictions_mlp = np.argmax(predictions_mlp, axis=1)
+    mlp_metrics = []
+    for k in range(0, n_folds):
+        mlp_model.fit(x_train_nn[k], y_train_nn[k], epochs=100, verbose=2, callbacks=callbacks_list,
+                      shuffle=True, validation_split=0.2, class_weight=class_weights_mlp)
 
-    displayConfusionMatrix(y_test, predictions_mlp, "MLP")
+        predictions_mlp = mlp_model.predict(x_test_nn[k], verbose=1, use_multiprocessing=True, workers=12)
+        predictions_mlp = np.argmax(predictions_mlp, axis=1)
+        mlp_metrics.append(
+            classification_report(y_test[k], predictions_mlp, target_names=['Legit', 'Phishing'], output_dict=True))
+        displayConfusionMatrix(y_test[k], predictions_mlp, "MLP")
+        print("MLP: ", classification_report(y_test[k], predictions_mlp, target_names=['Legit', 'Phishing']))
+    metrics = get_avg_metrics(mlp_metrics, n_folds)
+    print(metrics)
+    X_nn, y_nn, _, _ = nn.get_data(X, y, x_test, y_test)
+    mlp_model.fit(X_nn, y_nn, epochs=200, verbose=2, callbacks=callbacks_list,
+                  shuffle=True, validation_split=0.2, class_weight=class_weights_mlp)
+
     mlp_model.save(os.path.join("models", "mlp"))
-    print("MLP:", classification_report(y_test, predictions_mlp, target_names=['Legit', 'Phishing']))
 
     # --- Deep NN ----
     dnn_model, _ = nn.build_optimal_nn(x_train_v, x_val, y_train_v, y_val, deep=True)
@@ -437,21 +495,39 @@ if __name__ == '__main__':
     plt.plot(weights, recalls)
     plt.show()
     print ("Best weight for recall: ", best_w_recall)"""
-    dnn_model.fit(x_train_nn, y_train_nn, epochs=100, verbose=2, callbacks=callbacks_list,
-                  shuffle=True, validation_split=0.2, class_weight=class_weights_dnn)
-    predictions_dnn = dnn_model.predict(x_test_nn, verbose=1, use_multiprocessing=True, workers=12)
-    predictions_dnn = np.argmax(predictions_dnn, axis=1)
+    dnn_model.compile(loss=keras.losses.BinaryCrossentropy(), metrics=['accuracy'])
+    dnn_metrics = []
+    for k in range(0, n_folds):
+        dnn_model.fit(x_train_nn[k], y_train_nn[k], epochs=100, verbose=2, callbacks=callbacks_list,
+                      shuffle=True, validation_split=0.2, class_weight=class_weights_mlp)
 
-    displayConfusionMatrix(y_test, predictions_dnn, "DNN")
+        predictions_dnn = dnn_model.predict(x_test_nn[k], verbose=1, use_multiprocessing=True, workers=12)
+        predictions_dnn = np.argmax(predictions_dnn, axis=1)
+        dnn_metrics.append(
+            classification_report(y_test[k], predictions_dnn, target_names=['Legit', 'Phishing'], output_dict=True))
+        displayConfusionMatrix(y_test[k], predictions_dnn, "DNN")
+        print("DNN: ", classification_report(y_test[k], predictions_dnn, target_names=['Legit', 'Phishing']))
+    metrics = get_avg_metrics(dnn_metrics, n_folds)
+    print(metrics)
+    dnn_model.fit(X_nn, y_nn, epochs=200, verbose=2, callbacks=callbacks_list,
+                  shuffle=True, validation_split=0.2, class_weight=class_weights_mlp)
+
     dnn_model.save(os.path.join("models", "dnn"))
-    print("DNN:", classification_report(y_test, predictions_dnn, target_names=['Legit', 'Phishing']))
 
     # ---- EBM -----
-    ebm_model = ebm.train(x_train=x_training, y_train=y_training, feature_names=feature_names, seed=seed)
-    ebm_predictions = ebm_model.predict(x_test)
-    displayConfusionMatrix(y_test, ebm_predictions, "EBM")
+    metrics = []
+    for k in range(0, n_folds):
+        ebm_model = ebm.train(x_train=x_training[k], y_train=y_training[k], feature_names=feature_names, seed=seed)
+        # metrics_ebm = test_model(ebm_model, x_training, y_training, x_test, y_test, n_folds, print_=True, name='EBM')
+        ebm_predictions = ebm_model.predict(x_test[k])
+        metrics.append(
+            classification_report(y_test[k], ebm_predictions, target_names=['Legit', 'Phishing'], output_dict=True))
+        displayConfusionMatrix(y_test[k], ebm_predictions, 'EBM')
+        print("EBM: ", classification_report(y_test[k], ebm_predictions, target_names=['Legit', 'Phishing']))
+    metrics = get_avg_metrics(metrics, n_folds)
+    print(metrics)
+    ebm_model = ebm.train(x_train=X, y_train=y, feature_names=feature_names, seed=seed)
     saveModel(ebm_model, 'ebm')
-    print("EBM:", classification_report(y_test, ebm_predictions, target_names=['Legit', 'Phishing']))
 
     """
         # --- AdaBoost classifier ---

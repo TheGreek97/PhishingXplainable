@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 from lime import lime_tabular
 from matplotlib import pyplot
 from heapq import nsmallest
-from data import load_data
+from data import load_data_no_split, train_test_split
 from tensorflow import keras
 from training import displayConfusionMatrix
 
@@ -182,7 +182,7 @@ def lime_global_feature_importance_to_file(explanations, feature_names, file_nam
         out.write(json.dumps(feature_presence))
 
 
-def shap_global_feature_importance(model, masker, x_test, feature_names, file_name, seed, print_summary=True, n_top_features=3, nn=False):
+def shap_global_feature_importance_to_file(model, masker, x_test, feature_names, file_name, seed, print_summary=True, n_top_features=3, nn=False):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         if nn:
@@ -214,7 +214,8 @@ def shap_global_feature_importance(model, masker, x_test, feature_names, file_na
 if __name__ == "__main__":
     # Load data
     seed = 42
-    x_training, x_test, y_training, y_test, feature_names = load_data(test_size=0.2, seed=seed)
+
+    X, y, feature_names = load_data_no_split()
 
     # Load models
     dt_model = load_model('decision_tree.obj')
@@ -226,47 +227,48 @@ if __name__ == "__main__":
     ebm_model = load_model('ebm.obj')
 
     start_test = 0
-    end_test = len(y_test)
+    end_test = len(y)
 
     # DECISION TREE
     tree_global_explanation_static(dt_model)
-    tree_global_feature_importance_to_file(clf=dt_model, x_test=x_test, feature_names=feature_names,
+    tree_global_feature_importance_to_file(clf=dt_model, x_test=X, feature_names=feature_names,
                                            start_index=start_test, end_index=end_test, n_top_features=3)
 
     # Logistic Regression
     explain_logistic_regression_static(lr_model, feature_names)
 
     # ---- LIME - Global feature importance -----
+    x_training, _, _, _ = train_test_split(X, y, stratify=y, test_size=0.2, random_state=seed)
     lime_explainer = lime_tabular.LimeTabularExplainer(x_training.values, mode="classification",
                                                        class_names=['Legit', 'Phishing'],
                                                        feature_names=feature_names, random_state=seed)
     # DECISION TREE
-    explanations_dt, _ = lime_explain(dt_model, lime_explainer, x_test, y_test, 'dt',
+    explanations_dt, _ = lime_explain(dt_model, lime_explainer, X, y, 'dt',
                                       start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_dt, feature_names, 'dt')
 
     # LOGISTIC REGRESSION
-    explanations_lr, _ = lime_explain(lr_model, lime_explainer, x_test, y_test, 'lr',
+    explanations_lr, _ = lime_explain(lr_model, lime_explainer, X, y, 'lr',
                                       start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_lr, feature_names, 'lr')
 
     # SVM
-    explanations_svm, _ = lime_explain(svm_model, lime_explainer, x_test, y_test, 'svm',
+    explanations_svm, _ = lime_explain(svm_model, lime_explainer, X, y, 'svm',
                                        start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_svm, feature_names, 'svm')
 
     # RANDOM FOREST
-    explanations_rf, _ = lime_explain(rf_model, lime_explainer, x_test, y_test, 'rf',
+    explanations_rf, _ = lime_explain(rf_model, lime_explainer, X, y, 'rf',
                                       start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_rf, feature_names, 'rf')
 
     # Multi-Layer Perceptron
-    explanations_mlp, _ = lime_explain(mlp_model, lime_explainer, x_test, y_test, 'mlp',
+    explanations_mlp, _ = lime_explain(mlp_model, lime_explainer, X, y, 'mlp',
                                        start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_mlp, feature_names, 'mlp')
 
     # Deep Neural Network
-    explanations_dnn, _ = lime_explain(dnn_model, lime_explainer, x_test, y_test, 'dnn',
+    explanations_dnn, _ = lime_explain(dnn_model, lime_explainer, X, y, 'dnn',
                                        start_test, end_test, show=False, save_file=False)
     lime_global_feature_importance_to_file(explanations_dnn, feature_names, 'dnn')
 
@@ -275,32 +277,32 @@ if __name__ == "__main__":
     X_idx = 2    
     X100 = shap.utils.sample(x_training, 100)
     explainer = shap.KernelExplainer(svm_model.predict, X100, link='identity')
-    shap_values = explainer.shap_values(X=x_test.iloc[X_idx:X_idx+1, :], nsamples=100)
+    shap_values = explainer.shap_values(X=X.iloc[X_idx:X_idx+1, :], nsamples=100)
     shap.summary_plot(shap_values=shap_values, features=feature_names)"""
 
     masker_med = x_training.median().values.reshape((1, x_training.shape[1]))
     
     # DECISION TREE
-    shap_global_feature_importance(dt_model, masker_med, x_test, feature_names, 'dt', seed)
+    shap_global_feature_importance_to_file(dt_model, masker_med, X, feature_names, 'dt', seed)
 
     # LOGISTIC REGRESSION
-    shap_global_feature_importance(lr_model, masker_med, x_test, feature_names, 'lr', seed)
+    shap_global_feature_importance_to_file(lr_model, masker_med, X, feature_names, 'lr', seed)
 
     # SVM
-    shap_global_feature_importance(svm_model, masker_med, x_test, feature_names, 'svm', seed)
+    shap_global_feature_importance_to_file(svm_model, masker_med, X, feature_names, 'svm', seed)
 
     # RANDOM FOREST
-    shap_global_feature_importance(rf_model, masker_med, x_test, feature_names, 'rf', seed)
+    shap_global_feature_importance_to_file(rf_model, masker_med, X, feature_names, 'rf', seed)
 
     # Multi-Layer Perceptron
-    shap_global_feature_importance(mlp_model, masker_med, x_test, feature_names, 'mlp', seed, print_summary=False, nn=True)
+    shap_global_feature_importance_to_file(mlp_model, masker_med, X, feature_names, 'mlp', seed, print_summary=False, nn=True)
 
     # Deep Neural Network
-    shap_global_feature_importance(dnn_model, masker_med, x_test, feature_names, 'dnn', seed, print_summary=False, nn=True)
+    shap_global_feature_importance_to_file(dnn_model, masker_med, X, feature_names, 'dnn', seed, print_summary=False, nn=True)
 
     # ---- EBM -----
     ebm_global_explanation = ebm_model.explain_global()
-    ebm_local = ebm_model.explain_local(x_test.iloc[:4], y_test.iloc[:4])
+    ebm_local = ebm_model.explain_local(X.iloc[:4], y.iloc[:4])
     ebm_local.visualize().write_html('output/explanations/ebm/4.html')
-    ebm_local_explanation = ebm.ebm_global_feature_importance(ebm_model, x_test=x_test, y_test=y_test,
+    ebm_local_explanation = ebm.ebm_global_feature_importance(ebm_model, x_test=X, y_test=y,
                                                               feature_names=feature_names)
