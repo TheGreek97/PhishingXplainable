@@ -15,7 +15,7 @@ from sklearn.preprocessing import MinMaxScaler
 def custom_loss():
     # Create a loss function that adds the MSE loss to the mean of all squared activations of a specific layer
     def loss(y_true, y_pred):
-        return K.binary_crossentropy(y_true, y_pred) # + h_score_loss()
+        return K.binary_crossentropy(y_true, y_pred)  # TODO + h_score_loss()
 
     # Return a function
     return loss
@@ -149,10 +149,9 @@ def get_optimal_net(X, y, n_fold=5, seed=0, deep=False, verbose=0):
         score = h_model.evaluate(x_val, y_val)
 
         # Feature importance
-        importance = permutation_importance(h_model, x_val, y_val, scoring='neg_mean_squared_error').importances_mean
-        h_score_l = h_score_loss(importance, 0.5)
-
-        score = score + h_score_l  # sum the two losses
+        #importance = permutation_importance(h_model, x_val, y_val, scoring='neg_mean_squared_error').importances_mean
+        #h_score_l = h_score_loss(importance, 0.5)
+        #score = score + h_score_l  # sum the two losses
 
         # Build the best model with the optimal hyper-parameters
         # best_hps = tuner.get_best_hyperparameters()[0]

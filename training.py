@@ -14,10 +14,10 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import classification_report
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import ParameterGrid, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, ParameterGrid, StratifiedKFold
 
 from sklearn.inspection import permutation_importance
-from sklearn.metrics import make_scorer
+from sklearn.metrics import f1_score, roc_curve, roc_auc_score, precision_recall_curve, auc, make_scorer, recall_score, accuracy_score, precision_score
 
 import winsound
 import tensorflow as tf
@@ -60,9 +60,11 @@ def computeBestModelConfig(X, y, model, param_space, n_fold=5, seed=0, verbose=2
             fitted_model = temp_model.fit(X.iloc[ix_train], y.iloc[ix_train].values.ravel())
             X_val, y_val = X.iloc[ix_val], y.iloc[ix_val].values.ravel()
             # get permutation importance (https://scikit-learn.org/stable/modules/permutation_importance.html)
-            importance = permutation_importance(fitted_model, X_val, y_val, scoring='neg_mean_squared_error').importances_mean
-            scorer = make_scorer(custom_score, greater_is_better=True, feature_importance=importance,
-                                 verbose=verbose > 2, needs_proba=False)
+            #importance = permutation_importance(fitted_model, X_val, y_val, scoring='neg_mean_squared_error').importances_mean
+            #scorer = make_scorer(custom_score, greater_is_better=True, feature_importance=importance,
+            #                     verbose=verbose > 2, needs_proba=False)
+            #score = scorer(fitted_model, X_val, y_val)
+            scorer = make_scorer(f1_score)
             score = scorer(fitted_model, X_val, y_val)
             inner_scores.append(score)
             if verbose > 1:
@@ -198,7 +200,7 @@ if __name__ == '__main__':
     np.random.seed(seed)  # set random state also for sklearn
     tf.random.set_seed(seed)
 
-    execute_decision_tree = False
+    execute_decision_tree = True
     execute_logistic_regression = False
     execute_svm = False
     execute_random_forest = False
@@ -223,8 +225,8 @@ if __name__ == '__main__':
             'min_samples_leaf': [7],
             'max_depth': [8]
         }
-        # best_params_dt = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
-        best_params_dt = {'ccp_alpha': 0.0, 'criterion': 'entropy', 'max_depth': 8, 'min_samples_leaf': 7}
+        best_params_dt = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
+        # best_params_dt = {'ccp_alpha': 0.0, 'criterion': 'entropy', 'max_depth': 8, 'min_samples_leaf': 7}
         dt_model = model.set_params(**best_params_dt)
         # Evaluate
         metrics_dt = test_model_cv(dt_model, X, y, test_cv_ixs, print_=True, name='DT')
