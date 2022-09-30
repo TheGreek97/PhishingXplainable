@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow import keras
+import keras.backend as K
 from keras import layers
 from keras.optimizers import Adam
 from keras import callbacks
@@ -9,19 +10,24 @@ import keras_tuner as kt
 from sklearn.preprocessing import MinMaxScaler
 
 
-def get_data(x_train, y_train, x_test, y_test):
+def custom_loss():
+    # Create a loss function that adds the MSE loss to the mean of all squared activations of a specific layer
+    def loss(y_true, y_pred):
+        return K.binary_crossentropy(y_true, y_pred) # + heterogeneity_metric(y_pred)
+
+    # Return a function
+    return loss
+
+
+def format_x_data(X):
     scaler = MinMaxScaler()
+    x_nn = [scaler.fit_transform(x) for x in X]
+    return x_nn
 
-    x_train_nn = [scaler.fit_transform(x) for x in x_train]
-    y_train_nn = [np_utils.to_categorical(y, 2) for y in y_train]
 
-    # x_val_nn = scaler.fit_transform(x_val[0])
-    # y_val_nn = np_utils.to_categorical(y_val[0], 2)
-
-    x_test_nn = [scaler.transform(x) for x in x_test]
-    y_test_nn = [np_utils.to_categorical(y, 2) for y in y_test]  # np.asarray(y_test).astype('int32')
-
-    return x_train_nn, y_train_nn, x_test_nn, y_test_nn  # x_val_nn, y_val_nn
+def format_y_data(Y):
+    y_nn = [np_utils.to_categorical(y, 2) for y in Y]
+    return y_nn
 
 
 def mlp_model_builder(hp):
@@ -93,7 +99,7 @@ def build_optimal_nn(x_train_v, x_val, y_train_v, y_val, deep=False):
                          factor=3,  # factor which you have seen above
                          directory='logs',  # directory to save logs
                          project_name='xai_phishing',
-                         loss=keras.losses.BinaryCrossentropy())
+                         loss= keras.losses.BinaryCrossentropy())
     # hyper-tuning settings
     tuner.search_space_summary()
     stop_early = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
@@ -105,7 +111,8 @@ def build_optimal_nn(x_train_v, x_val, y_train_v, y_val, deep=False):
     y_train_v = [np_utils.to_categorical(y, 2) for y in y_train_v]
     y_val = [np_utils.to_categorical(y, 2) for y in y_val]
     w = 1
-    """for w in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 50]:
+    """weights = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 50]
+    for w in weights:
         print("Class weight: ", w)
         scores = [0, 0, 0, 0, 0]
         for k in range(0, n_folds):"""
@@ -130,6 +137,7 @@ def build_optimal_nn(x_train_v, x_val, y_train_v, y_val, deep=False):
         best_model = h_model
         best_w = w
         best_score = avg_score
-best_model.summary()
-return best_model, {0: 1, 1: best_w}"""
+    best_model.summary()
+    return best_model, {0: 1, 1: best_w}"""
+
     return h_model, {0: 1, 1: w}
