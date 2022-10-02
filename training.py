@@ -5,13 +5,18 @@ import matplotlib.pyplot as plt
 
 import sklearn.tree as tree
 import sklearn.svm as svm
+from sklearn import clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import f1_score, recall_score
+from sklearn.metrics import f1_score, recall_score, accuracy_score
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import classification_report
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import KFold, ParameterGrid, GridSearchCV, StratifiedKFold
+
+from sklearn.inspection import permutation_importance
+from sklearn.metrics import fbeta_score, make_scorer
 
 import winsound
 import tensorflow as tf
@@ -30,6 +35,10 @@ def het_score(x):
 
     return sum/n_samples
 """
+
+
+def custom_loss(y_true, y_pred):
+    return accuracy_score(y_true, y_pred)
 
 
 def showTree(model, feature_names):
@@ -94,7 +103,7 @@ def determineLRkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
     best_weights = {0: 1, 1: 5}
     best_score = 0
     n_folds = len(x_train)
-    for w in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 50]:
+    for w in [1, 2, 5, 10]:
         for solver in ["newton-cg", "lbfgs", "liblinear", "sag", "saga"]:
             if solver in {'newton-cg', "lbfgs", "sag"}:
                 penalties = ['l2', 'none']
@@ -120,6 +129,9 @@ def determineLRkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
                                                        random_state=seed, l1_ratio=l1_ratio, max_iter=500)
                             model.fit(x_train[k], y_train[k].values.ravel())
                             scores[k] = model.score(x_val[k], y_val[k].values.ravel())
+
+                            results = permutation_importance(model, x_train[k], y_train[k].values.ravel(), scoring='neg_mean_squared_error')
+                            importance = results.importances_mean  # TODO Compute H-Score from importances
                         avg_score = sum(scores) / n_folds
                         print(avg_score)
                         if avg_score > best_score:
@@ -174,10 +186,75 @@ def determineSVMkFoldConfiguration(x_train, x_val, y_train, y_val, seed=0):
             "tol": best_tol, "class_weights": best_weights}
 
 
+def computeModelRF(X, y, seed=0):
+    """
+        Random Forest Hyper-parameter tuning
+    """
+    # configure the cross-validation procedure
+    cv_outer = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
+    # enumerate splits
+    outer_results = list()
+    for train_ix, test_ix in cv_outer.split(X, y):
+        # split data
+        X_train, X_test = X.iloc[train_ix, :], X.iloc[test_ix, :]
+        y_train, y_test = y.iloc[train_ix], y.iloc[test_ix]
+        # configure the cross-validation procedure
+        cv_inner = KFold(n_splits=5, shuffle=True, random_state=seed)
+        # define the model
+        model = RandomForestClassifier(random_state=seed)
+        # define search space
+        space = {
+            'class_weight': [{0: 1, 1: w} for w in [1, 2, 5, 10]],
+            'n_estimators': [10, 50, 100, 500],
+            'max_features': [5, 10, 14, 17],
+            'max_samples': [0.1, 0.25, 0.5, 0.7]
+        }
+
+        sampler = ParameterGrid(space)
+        scorer = make_scorer(custom_loss, needs_proba=False)
+        best_score = 0
+        best_model = model
+        for params in sampler:
+            for ix_train, ix_test in cv_inner.split(X, y):
+                temp_model = clone(model).set_params(**params)
+                fitted_model = temp_model.fit(X.iloc[ix_train], y.iloc[ix_train].values.ravel())
+                score = scorer(fitted_model, X.iloc[ix_test], y.iloc[ix_test].values.ravel())
+                # do something with the results
+                if score > best_score:
+                    best_model = temp_model
+                    best_score = score
+        """# define search
+        search = GridSearchCV(model, space, scoring='accuracy', cv=cv_inner, refit=True)
+        # execute search
+        result = search.fit(X_train, y_train.values.ravel())
+        # get the best performing model fit on the whole training set
+        best_model = result.best_estimator_"""
+        # evaluate model on the hold out dataset
+        y_predicted = best_model.predict(X_test)
+        # evaluate the model
+        acc = accuracy_score(y_test, y_predicted)
+        # store the result
+        outer_results.append(acc)
+        # report progress
+        print('>acc=%.3f, est=%.3f, cfg=%s' % (acc, result.best_score_, result.best_params_))
+    # summarize the estimated performance of the model
+    print(f'Accuracy: ({np.mean(outer_results)}, {np.std(outer_results)})')
+    # TODO: finally compute and return the best model using the WHOLE dataset
+    return best_model
+
+
 def determineRFkFoldConfiguration(x_train, x_val, y_train, y_val, class_weights, seed=0):
     """
         Random Forest Hyper-parameter tuning
     """
+    rf = RandomForestClassifier()
+    hyperparams = {
+        'n_estimators' : [5, 25, 50, 75, 100],
+        'max_depth' : [2, 12, 24, None]
+    }
+    cross_val = GridSearchCV(rf, hyperparams, cv=5)
+    cross_val.fit(x_train, y_train.values.ravel())
+    
     best_n = 10
     best_bootstrap = True
     best_max_depth = 3
@@ -297,7 +374,7 @@ if __name__ == '__main__':
     tf.random.set_seed(seed)
 
     execute_decision_tree = False
-    execute_logistic_regression = True
+    execute_logistic_regression = False
     execute_svm = False
     execute_random_forest = True
     execute_mlp = False
@@ -306,17 +383,15 @@ if __name__ == '__main__':
 
     # LOAD THE DATA
     X, y, feature_names = load_data_no_split()
-    # print("Shape :", X.shape)
-    # print(X.head())
 
     # - Stratified K-Fold for validation
-    x_train, _, y_train, _, _ = load_data(test_size=0.2, seed=seed)
+    x_training, x_test, y_training, y_test, _ = load_data(test_size=0.2, seed=seed)
     n_folds = 10
-    x_train_v, x_val, y_train_v, y_val = stratifiedKFold(data_x=x_train, data_y=y_train, n_folds=n_folds, seed=seed)
+    x_train_v, x_val, y_train_v, y_val = stratifiedKFold(data_x=x_training, data_y=y_training, n_folds=n_folds, seed=seed)
 
-    # - Stratified K-Fold for testing
+    """# - Stratified K-Fold for testing
     x_training, x_test, y_training, y_test = stratifiedKFold(data_x=X, data_y=y, n_folds=n_folds, seed=seed)
-
+    """
     # --- DECISION TREE ----
     if execute_decision_tree:
         # best_parameters_dt = determineDTkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
@@ -370,6 +445,7 @@ if __name__ == '__main__':
     if execute_random_forest:
         # best_parameters_rf = determineRFkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
         # print(best_parameters_rf)
+        """
         best_parameters_rf = {'alpha': 0.0, 'criterion': 'entropy', 'n': 75, 'bootstrap': True, 'max_depth': 9, 'max_features': 10, 'max_samples': 0.7, 'class_weights': {0: 1, 1: 1}}
 
         rf_model = RandomForestClassifier(n_estimators=best_parameters_rf['n'],
@@ -387,9 +463,10 @@ if __name__ == '__main__':
                                           )
         metrics_rf = test_model(rf_model, x_training, y_training, x_test, y_test, n_folds, print_=False, name='RF')
         print(metrics_rf)
-        rf_model.fit(X, np.ravel(y))
+        rf_model.fit(X, y.values.ravel())
+        """
+        rf_model = computeModelRF(X, y, seed)
         saveModel(rf_model, 'random_forest')
-
     if execute_ebm:
         # ---- EBM -----
         metrics = []
