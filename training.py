@@ -221,8 +221,8 @@ def computeModelRF(X, y, seed=0):
         cv_inner = KFold(n_splits=5, shuffle=True, random_state=seed)
         # define search space
         space = {
-            'class_weight': [{0: 1, 1: w} for w in [1, 2, 5, 10]],
-            'n_estimators': [10, 50, 100, 500],
+            #'class_weight': [{0: 1, 1: w} for w in [1, 2, 5, 10]],
+            'n_estimators': [10, 50, 100],
             'max_features': [5, 10, 14, 18],
             'max_samples': [0.1, 0.25, 0.5]
         }
@@ -264,7 +264,7 @@ def computeModelRF(X, y, seed=0):
     # summarize the estimated performance of the model
     print(f'Accuracy: ({np.mean(outer_results)}, {np.std(outer_results)})')
     best_model = model.set_params(**best_params)
-    best_model.fit(X, y)  # Fit the final model on the whole dataset
+    best_model.fit(X, y.values.ravel())  # Fit the final model on the whole dataset
     return best_model
 
 
