@@ -26,19 +26,35 @@ import nn
 import ebm
 from data import load_data, stratifiedKFold, load_data_no_split
 
-"""
-def het_score(x):
-    n_samples = 100
-    alpha_het = 0.5
-    sum = 0
-    for i in range(0,n_samples):
 
-    return sum/n_samples
-"""
+def h_score(x_, alpha=0.5):
+    """
+    Calculates the heterogeneity score (H-score) of the array of feature importance x_
+    Parameters
+    ----------
+    x_: array of feature importance
+    alpha: coefficient (0 < alpha < 1) that defines the weight that features with value less than the mean have.
+        With alpha=0.5 all features have the same weight, regardless if their value is below or above the mean.
+        A value of alpha below 0.5 gives more weight to features with value above the mean.
+    Returns
+    -------
+    result : H-score for the array of feature importance x_
+    """
+    if not alpha > 0 and alpha < 1:
+        raise ValueError("alpha must be between 0 and 1 (not included)")
+    n = len(x_)
+    mean = np.sum(x_)/n
+    s = 0
+    for x in x_:
+        f = (1-alpha) * (x-mean) if x > 0 else alpha * (x-mean)
+        s += np.abs(f)  # f * f
+    return s/n
 
 
-def custom_loss(y_true, y_pred):
-    return accuracy_score(y_true, y_pred)
+def custom_loss(y_true, y_pred, feature_importance):
+    acc = accuracy_score(y_true, y_pred)
+    het = h_score(feature_importance, alpha=0.5)
+    return acc + het*10
 
 
 def showTree(model, feature_names):
@@ -194,35 +210,43 @@ def computeModelRF(X, y, seed=0):
     cv_outer = StratifiedKFold(n_splits=10, shuffle=True, random_state=seed)
     # enumerate splits
     outer_results = list()
+    # define the model
+    model = RandomForestClassifier(random_state=seed)
+    best_params = {}
     for train_ix, test_ix in cv_outer.split(X, y):
         # split data
         X_train, X_test = X.iloc[train_ix, :], X.iloc[test_ix, :]
         y_train, y_test = y.iloc[train_ix], y.iloc[test_ix]
         # configure the cross-validation procedure
         cv_inner = KFold(n_splits=5, shuffle=True, random_state=seed)
-        # define the model
-        model = RandomForestClassifier(random_state=seed)
         # define search space
         space = {
             'class_weight': [{0: 1, 1: w} for w in [1, 2, 5, 10]],
             'n_estimators': [10, 50, 100, 500],
-            'max_features': [5, 10, 14, 17],
-            'max_samples': [0.1, 0.25, 0.5, 0.7]
+            'max_features': [5, 10, 14, 18],
+            'max_samples': [0.1, 0.25, 0.5]
         }
 
         sampler = ParameterGrid(space)
-        scorer = make_scorer(custom_loss, needs_proba=False)
         best_score = 0
         best_model = model
+        best_params = {}
+        loop = 0
         for params in sampler:
             for ix_train, ix_test in cv_inner.split(X, y):
                 temp_model = clone(model).set_params(**params)
                 fitted_model = temp_model.fit(X.iloc[ix_train], y.iloc[ix_train].values.ravel())
+                # perform permutation importance (https://scikit-learn.org/stable/modules/permutation_importance.html)
+                importance = permutation_importance(fitted_model, X, y, scoring='neg_mean_squared_error').importances_mean
+                scorer = make_scorer(custom_loss, feature_importance=importance, needs_proba=False)
                 score = scorer(fitted_model, X.iloc[ix_test], y.iloc[ix_test].values.ravel())
                 # do something with the results
                 if score > best_score:
                     best_model = temp_model
                     best_score = score
+                    best_params = params
+                loop += 1
+                print(f"--{loop}--")
         """# define search
         search = GridSearchCV(model, space, scoring='accuracy', cv=cv_inner, refit=True)
         # execute search
@@ -236,10 +260,11 @@ def computeModelRF(X, y, seed=0):
         # store the result
         outer_results.append(acc)
         # report progress
-        print('>acc=%.3f, est=%.3f, cfg=%s' % (acc, result.best_score_, result.best_params_))
+        print('>acc=%.3f, est=%.3f, cfg=%s' % (acc, best_score, best_params))
     # summarize the estimated performance of the model
     print(f'Accuracy: ({np.mean(outer_results)}, {np.std(outer_results)})')
-    # TODO: finally compute and return the best model using the WHOLE dataset
+    best_model = model.set_params(**best_params)
+    best_model.fit(X, y)  # Fit the final model on the whole dataset
     return best_model
 
 
