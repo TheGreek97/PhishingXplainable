@@ -19,14 +19,14 @@ def custom_loss():
     return loss
 
 
-def format_x_data(X):
+def format_x_data(x):
     scaler = MinMaxScaler()
-    x_nn = [scaler.fit_transform(x) for x in X]
+    x_nn = scaler.fit_transform(x)
     return x_nn
 
 
-def format_y_data(Y):
-    y_nn = [np_utils.to_categorical(y, 2) for y in Y]
+def format_y_data(y):
+    y_nn = np_utils.to_categorical(y, 2)
     return y_nn
 
 

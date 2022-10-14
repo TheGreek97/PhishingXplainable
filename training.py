@@ -27,9 +27,9 @@ import ebm
 from data import load_data, stratifiedKFold, load_data_no_split
 
 
-def h_score(x_, alpha=0.5):
+def h_score_loss(x_, alpha=0.5):
     """
-    Calculates the heterogeneity score (H-score) of the array of feature importance x_
+    Calculates the loss on the heterogeneity score (H-score) of the array of feature importance x_
     Parameters
     ----------
     x_: array of feature importance
@@ -52,9 +52,9 @@ def h_score(x_, alpha=0.5):
 
 
 def custom_loss(y_true, y_pred, feature_importance):
-    acc = accuracy_score(y_true, y_pred)
-    het = h_score(feature_importance, alpha=0.5)
-    return acc + het*10
+    acc = 1 - accuracy_score(y_true, y_pred)
+    het = h_score_loss(feature_importance, alpha=0.5)
+    return acc + het*30
 
 
 def showTree(model, feature_names):
@@ -212,7 +212,8 @@ def computeModelRF(X, y, seed=0):
     outer_results = list()
     # define the model
     model = RandomForestClassifier(random_state=seed)
-    best_params = {}
+    best_params = {'max_features': 5, 'max_samples': 0.1, 'n_estimators': 10}
+
     for train_ix, test_ix in cv_outer.split(X, y):
         # split data
         X_train, X_test = X.iloc[train_ix, :], X.iloc[test_ix, :]
@@ -226,13 +227,14 @@ def computeModelRF(X, y, seed=0):
             'max_features': [5, 10, 14, 18],
             'max_samples': [0.1, 0.25, 0.5]
         }
-
         sampler = ParameterGrid(space)
-        best_score = 0
+        best_score = 1000
         best_model = model
         best_params = {}
-        loop = 0
+        outer_loop = 0
+        inner_loop = 0
         for params in sampler:
+            outer_loop += 1
             for ix_train, ix_test in cv_inner.split(X, y):
                 temp_model = clone(model).set_params(**params)
                 fitted_model = temp_model.fit(X.iloc[ix_train], y.iloc[ix_train].values.ravel())
@@ -241,18 +243,13 @@ def computeModelRF(X, y, seed=0):
                 scorer = make_scorer(custom_loss, feature_importance=importance, needs_proba=False)
                 score = scorer(fitted_model, X.iloc[ix_test], y.iloc[ix_test].values.ravel())
                 # do something with the results
-                if score > best_score:
+                if score < best_score:
                     best_model = temp_model
                     best_score = score
                     best_params = params
-                loop += 1
-                print(f"--{loop}--")
-        """# define search
-        search = GridSearchCV(model, space, scoring='accuracy', cv=cv_inner, refit=True)
-        # execute search
-        result = search.fit(X_train, y_train.values.ravel())
-        # get the best performing model fit on the whole training set
-        best_model = result.best_estimator_"""
+                inner_loop += 1
+                print(f"--Fold: {outer_loop} - {inner_loop}--")
+
         # evaluate model on the hold out dataset
         y_predicted = best_model.predict(X_test)
         # evaluate the model
@@ -262,7 +259,7 @@ def computeModelRF(X, y, seed=0):
         # report progress
         print('>acc=%.3f, est=%.3f, cfg=%s' % (acc, best_score, best_params))
     # summarize the estimated performance of the model
-    print(f'Accuracy: ({np.mean(outer_results)}, {np.std(outer_results)})')
+    # print(f'Accuracy: ({np.mean(outer_results)}, {np.std(outer_results)})')
     best_model = model.set_params(**best_params)
     best_model.fit(X, y.values.ravel())  # Fit the final model on the whole dataset
     return best_model
@@ -470,7 +467,7 @@ if __name__ == '__main__':
     if execute_random_forest:
         # best_parameters_rf = determineRFkFoldConfiguration(x_train_v, x_val, y_train_v, y_val, seed)
         # print(best_parameters_rf)
-        """
+
         best_parameters_rf = {'alpha': 0.0, 'criterion': 'entropy', 'n': 75, 'bootstrap': True, 'max_depth': 9, 'max_features': 10, 'max_samples': 0.7, 'class_weights': {0: 1, 1: 1}}
 
         rf_model = RandomForestClassifier(n_estimators=best_parameters_rf['n'],
@@ -492,8 +489,9 @@ if __name__ == '__main__':
         """
         rf_model = computeModelRF(X, y, seed)
         saveModel(rf_model, 'random_forest')
+        """
+    # ---- EBM -----
     if execute_ebm:
-        # ---- EBM -----
         metrics = []
         for k in range(0, n_folds):
             ebm_model = ebm.train(x_train=x_training[k], y_train=y_training[k], feature_names=feature_names, seed=seed)
@@ -520,8 +518,8 @@ if __name__ == '__main__':
         callbacks.EarlyStopping(monitor='val_loss', min_delta=0.0001, patience=10, restore_best_weights=True)
     ]
     # Whole dataset (used for the final training)
-    X_total_nn = nn.format_x_data([X])[0]
-    y_total_nn = nn.format_y_data([y])[0]
+    X_total_nn = nn.format_x_data(X)  # = nn.format_x_data([X])[0]
+    y_total_nn = nn.format_y_data(y)
 
     # --- Multi-Layer Perceptron ----
     if execute_mlp:
