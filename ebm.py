@@ -1,40 +1,15 @@
 from interpret.glassbox import ExplainableBoostingClassifier
-from sklearn.metrics import f1_score
 import numpy as np
 import os
 import json
-from sklearn.model_selection import train_test_split
-import matplotlib.pyplot as plt
 
 
-def train(x_train, y_train, feature_names, seed):
-    best_score = 0
-    best_w = 1  # best w is 1
-    # x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, stratify=y_train, test_size=0.2, random_state=seed)
-    f1_scores = []
-    weights = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 50]
-    """for w in weights:
-        ebm = ExplainableBoostingClassifier(feature_names=feature_names, random_state=seed, validation_size=0.2)
-        sample_weights = np.zeros((len(y_train)))
-        for i, y in enumerate(y_train.values):
-            sample_weights[i] = 1 if y[0] == 0 else w
-        ebm.fit(x_train, y_train, sample_weight=sample_weights)
-        y_pred = ebm.predict(x_val)
-        score = f1_score(y_val.values.astype(int).ravel(), y_pred.astype(int), labels=['Non-phishing', 'Phishing'])
-        f1_scores.append(score)
-        if score > best_score:
-            best_score = score
-            best_w = w
-    plt.xlabel("Weight of class Phishing")
-    plt.ylabel("F1 score")
-    plt.plot(weights, f1_scores)
-    plt.show()
-    print(best_w, best_score)"""
+def train(x_train, y_train, feature_names, seed,  class_weight=1):
     sample_weights = np.zeros((len(y_train)))
     for i, y in enumerate(y_train.values):
-        sample_weights[i] = 1 if y[0] == 0 else best_w
+        sample_weights[i] = 1 if y[0] == 0 else class_weight
     ebm_model = ExplainableBoostingClassifier(feature_names=feature_names, random_state=seed, validation_size=0.2)
-    ebm_model.fit(x_train, y_train, sample_weight=sample_weights)
+    ebm_model.fit(x_train, y_train)  # , sample_weight=sample_weights)
 
     return ebm_model
 
