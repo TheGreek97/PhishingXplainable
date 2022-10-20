@@ -4,11 +4,11 @@ from sklearn.model_selection import StratifiedKFold
 from tensorflow import keras
 import keras.backend as K
 from keras import layers
-from keras.optimizers import Adam
+from util import h_score_loss
 from keras import callbacks
 from keras.utils import np_utils
 import keras_tuner as kt
-
+from sklearn.inspection import permutation_importance
 from sklearn.preprocessing import MinMaxScaler
 
 
@@ -147,6 +147,13 @@ def get_optimal_net(X, y, n_fold=5, seed=0, deep=False, verbose=0):
             h_model.summary()
             tuner.results_summary()
         score = h_model.evaluate(x_val, y_val)
+
+        # Feature importance
+        importance = permutation_importance(h_model, x_val, y_val, scoring='neg_mean_squared_error').importances_mean
+        h_score_l = h_score_loss(importance, 0.5)
+
+        score = score + h_score_l  # sum the two losses
+
         # Build the best model with the optimal hyper-parameters
         # best_hps = tuner.get_best_hyperparameters()[0]
         # h_model = model_builder(best_hps)
