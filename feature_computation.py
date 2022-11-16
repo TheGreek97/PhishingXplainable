@@ -14,7 +14,7 @@ from whois import whois
 from spellchecker import SpellChecker
 
 
-def extract_features(mail):
+def extract_features(mail, return_elements=False):
     anchors_in_mail = get_anchors(mail)
     images_in_mail = get_images(mail)
     links_plain_text = get_links_plain_text(mail)
@@ -28,11 +28,9 @@ def extract_features(mail):
             email_is_html = False
 
     ## Mail body
-    sus_words_body = suspicious_words_body(mail)  # Suspicious Words
-    img_in_body = image_present(images_in_mail)  # Image Present
-    special_chars_body = spec_chars_body(mail)  # Special Characters in body
-    links_present_mail = len(links_plain_text)  # Links Present
-    no_misspelled_words = misspelled_words(mail)  # Misspelled words
+    sus_words_body = suspicious_words_body(mail)
+    special_chars_body = spec_chars_body(mail)
+    misspelled_words_body = misspelled_words(mail)
 
     url_features = None
     if email_is_html:
@@ -57,13 +55,24 @@ def extract_features(mail):
 
     if url_features is not None:
         body_features = {
-            "sus_words_body": sus_words_body,
-            "img_in_body": img_in_body,
-            "special_chars_body": special_chars_body,
-            "links_present_mail": links_present_mail,
-            "no_misspelled_words": no_misspelled_words
+            "sus_words_body": len(sus_words_body),  # Suspicious Words
+            "img_in_body": len(images_in_mail) > 0,  # Image Present?
+            "special_chars_body": len(special_chars_body),  # Special Characters in body
+            "links_present_mail": len(links_plain_text),  # Links Present
+            "no_misspelled_words": len(misspelled_words_body)   # Misspelled words
         }
-        return body_features | url_features  # merge the 2 dictionaries
+        features = body_features | url_features  # merge the 2 dictionaries
+        if return_elements:
+            elements = {
+                "sus_words_body": sus_words_body,
+                "imgs_in_body": images_in_mail,
+                "special_chars_body": special_chars_body,
+                "links_present_mail": links_plain_text,
+                "misspelled_words": misspelled_words_body
+            }
+            return features, elements
+        else:
+            return features
     else:
         return False
 
@@ -206,13 +215,8 @@ def suspicious_words_body(mail):
         words_regex += w
         if i < len(suspicious_words) - 1:
             words_regex += "|"
-    match = re.findall(words_regex, mail, re.IGNORECASE)
-    count = len(match)
-    return count
-
-
-def image_present(images):
-    return len(images) > 0
+    matches = re.findall(words_regex, mail, re.IGNORECASE)
+    return matches
 
 
 def misspelled_words(mail):
@@ -226,15 +230,14 @@ def misspelled_words(mail):
             unknown_words.remove(w)
         except KeyError:
             continue
-    return len(unknown_words)
+    return unknown_words
 
 
 def spec_chars_body(mail):
     body = get_mail_body(mail)
     matches_spec_chars = re.findall(r'[.,!?@\\:£$€\/\-;\*%\+_]', body)
     matches_unicode_chars = re.findall(r'[^\x00-\x7F]', body)
-    count = len(matches_spec_chars) + len(matches_unicode_chars)
-    return count
+    return matches_spec_chars + matches_unicode_chars
 
 
 def links_present(links):
