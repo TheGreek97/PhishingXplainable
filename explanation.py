@@ -6,6 +6,7 @@ from matplotlib import pyplot
 from heapq import nsmallest
 from data import load_data_no_split, train_test_split
 from tensorflow import keras
+from util import h_score_loss
 
 import ebm
 import warnings
@@ -20,7 +21,6 @@ import json
 def load_model(file_name):
     with open(os.path.join('models', file_name), 'rb') as file:
         return pickle.load(file)
-
 
 
 def compute_h_loss(explanation_list, shap=False):
