@@ -15,31 +15,28 @@ from spellchecker import SpellChecker
 
 
 def extract_features(mail, return_elements=False):
-    anchors_in_mail = get_anchors(mail)
-    images_in_mail = get_images(mail)
-    links_plain_text = get_links_plain_text(mail)
-    email_is_html = True
+    body = mail["body"]
+    # anchors_in_mail = get_anchors(mail)
+    # images_in_mail = get_images(mail)
+    links_plain_text = mail["urls"] #  get_links_plain_text(mail)
+    email_is_html = re.match("text/html", mail["headers"]) is not None
 
-    if len(anchors_in_mail) < 1:  # If there's no link in the mail, don't compute the features
-        if len(links_plain_text) < 1:
-            # print(mail)
-            return False
-        else:
-            email_is_html = False
+    if len(links_plain_text) < 1:  # If there's no link in the mail, don't compute the features
+        return False
 
     ## Mail body
-    sus_words_body = suspicious_words_body(mail)
-    special_chars_body = spec_chars_body(mail)
-    misspelled_words_body = misspelled_words(mail)
+    sus_words_body = suspicious_words_body(body)
+    special_chars_body = spec_chars_body(body)
+    misspelled_words_body = misspelled_words(body)
 
     url_features = None
     if email_is_html:
         ## URL
         max_score_phish = -1
-        for link in anchors_in_mail:
-            href_link = get_link_in_anchor(link)
-            if href_link != "":
-                url_feats, new_score = get_url_features(href_link, visible_link=link, max_score_phish=max_score_phish)
+        for link in links_plain_text:
+            # href_link = get_link_in_anchor(link)
+            if link != "":
+                url_feats, new_score = get_url_features(link, max_score_phish=max_score_phish)
                 if new_score > max_score_phish:
                     max_score_phish = new_score
                     url_features = url_feats  # urls_features.append(url_feats)
@@ -56,16 +53,18 @@ def extract_features(mail, return_elements=False):
     if url_features is not None:
         body_features = {
             "sus_words_body": len(sus_words_body),  # Suspicious Words
-            "img_in_body": len(images_in_mail) > 0,  # Image Present?
+            "img_in_body": False,  # len(images_in_mail) > 0,  # Image Present?
             "special_chars_body": len(special_chars_body),  # Special Characters in body
             "links_present_mail": len(links_plain_text),  # Links Present
             "no_misspelled_words": len(misspelled_words_body)   # Misspelled words
         }
         features = body_features | url_features  # merge the 2 dictionaries
+        
+        features["domain_geolocation"] = mail["url_location"]
         if return_elements:
             elements = {
                 "sus_words_body": sus_words_body,
-                "imgs_in_body": images_in_mail,
+                "imgs_in_body": [],  # images_in_mail,
                 "special_chars_body": special_chars_body,
                 "links_present_mail": links_plain_text,
                 "misspelled_words": misspelled_words_body
@@ -184,6 +183,7 @@ def get_url_features(link, visible_link="", max_score_phish=0):
         age_of_domain = 9999999
         expiration = 99999999
         ranking = 20000
+
     score = score + 1 if age_of_domain < 200 else score  # increase score if the domain is less than 200 days old
     score = score + 1 if expiration < 100 else score  # increase score if domain is expiring in less than 100 days
 
@@ -339,10 +339,10 @@ def link_mismatch_a(link):
         return False
     else:
         href = href.group(0).lower()
-        href = href.split('href')[1]
+        href = href.split('HREF')[1]
         href = href.strip('="\'')
         visible_link = visible_link.group(0)
-        visible_link = visible_link.strip('<>')
+        visible_link = visible_link.strip('[]')#('<>')
         return href != visible_link
 
 
@@ -383,11 +383,3 @@ def get_mail_body(mail):
         body = splits[1]
     return body
 
-
-def compute_links_in_mail_feature(mail):
-    anchors_in_mail = get_anchors(mail)
-    links_plain_text = get_links_plain_text(mail)
-    if len(anchors_in_mail) < 1:  # If there's no link in the mail, don't compute the features
-        if len(links_plain_text) < 1:
-            return False
-    return len(links_plain_text)

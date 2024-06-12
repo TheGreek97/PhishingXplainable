@@ -5,6 +5,23 @@ import json
 import mailparser
 
 
+def load_datasets():
+    base_path = os.path.join("datasets", "filtered")
+    for dataset in ['phishing', 'legit']:
+        df = pandas.read_csv(os.path.join(base_path, dataset + ".csv"), encoding='utf-8')
+        df = df.reset_index()  # make sure indexes pair with number of rows
+        for index, mail in df.iterrows():
+            if not pandas.isnull(mail):
+                filename = dataset + str(index) + ".json"
+                print(f"Processing email {filename}")
+                features = fe.extract_features(mail)
+                if features:
+                    features["class"] = 1 if (dataset == 'phishing') else 0  
+                    file_path = os.path.join('datasets', 'features', dataset, filename)
+                    write_feature_file(file_path, features)
+
+
+
 def enron_dataset(start_index=0):
     base_path = 'datasets/raw/enron/'
     for dataset in ['emails-phishing.csv', 'emails-enron.csv']:

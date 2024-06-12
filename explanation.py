@@ -279,8 +279,8 @@ if __name__ == "__main__":
         lime_global_feature_importance_to_file(explanations_lr, feature_names, 'lr')
         # SHAP
         shap_global_feature_importance_to_file(lr_model, masker_med, X, feature_names, 'lr', seed)
-        explanations_mlp = shap_explain(lr_model, masker_med, X, print_summary=True, nn=False)
-        shap_global_feature_importance_to_file(explanations_mlp, feature_names, 'lr', nn=False)
+        explanations_lr = shap_explain(lr_model, masker_med, X, print_summary=True, nn=False)
+        shap_global_feature_importance_to_file(explanations_lr, feature_names, 'lr', nn=False)
 
     # SVM
     if execute_svm:
@@ -327,8 +327,8 @@ if __name__ == "__main__":
                                         start_test, end_test, show=False, save_file=False)
         lime_global_feature_importance_to_file(explanations_dnn, feature_names, 'dnn')
         # SHAP
-        explanations_mlp = shap_explain(dnn_model, masker_med, X, print_summary=True, nn=True)
-        shap_global_feature_importance_to_file(explanations_mlp, feature_names, 'dnn', nn=True)
+        explanations_dnn = shap_explain(dnn_model, masker_med, X, print_summary=True, nn=True)
+        shap_global_feature_importance_to_file(explanations_dnn, feature_names, 'dnn', nn=True)
 
     # ---- EBM -----
     if execute_ebm:
