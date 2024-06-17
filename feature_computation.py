@@ -10,7 +10,7 @@ import utils.ssl_cert
 import utils.alexa_rank
 from html.parser import HTMLParser
 from datetime import datetime
-from whois import whois
+import whois
 from spellchecker import SpellChecker
 
 

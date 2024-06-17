@@ -11,7 +11,7 @@ from OpenSSL import SSL
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 import idna
-from backports.ssl_match_hostname import match_hostname, CertificateError
+#from backports.ssl_match_hostname import match_hostname, CertificateError
 
 import concurrent.futures
 from socket import socket, SOCK_STREAM, AF_INET
@@ -44,11 +44,12 @@ def verify_cert(cert, hostname):
     if cert == {}:
         return False
     expired = has_expired(cert)
-    try:
+    """try:
         match_hostname(cert, hostname)
         return True and not expired
     except CertificateError:
-        return False
+        return False"""
+    return not expired
 
 
 def get_certificate(hostname, port):
@@ -74,11 +75,12 @@ def get_certificate(hostname, port):
         # ctx.verify_mode = SSL.VERIFY_NONE
         # ssl_sock = ssl.wrap_socket(sock, ssl_version=ssl.PROTOCOL_SSLv3,
         #                            cert_reqs=ssl.CERT_REQUIRED, ca_certs=...)
-        try:
+        cert = None
+        """try:
             cert = ssl_sock.getpeercert()
             # print(cert)
         except CertificateError:
-            cert = None
+            cert = None"""
         ssl_sock.unwrap()
         ssl_sock.close()
         sock.close()

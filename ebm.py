@@ -43,13 +43,11 @@ def ebm_global_feature_importance(model, x_test, y_test, feature_names, n_top_fe
     feature_presence = {f: 0 for f in feature_names}
     length = len(x_test)
     ebm_local = model.explain_local(x_test.iloc[:length], y_test.iloc[:length])
-    tmp = 0
     for i in range(0, length):
         explanation = ebm_local.data(i)  # ["names"] and ["scores"]
         features = {explanation["names"][i]: explanation["scores"][i] for i in range(0, len(explanation["names"]))}
         x = [abs(features[f]) for f in feature_names]
         indexes_sort = np.argsort(x)
-        tmp += features['url_shortened']
         for j in range(1, n_top_features+1):  # take the top N features
             top_feature = feature_names[indexes_sort[-j]]  # the indexes are the features (-j => arr sort in asc. order)
             feature_presence[top_feature] += 1  # increase the feature by one if it is in the top 3 features

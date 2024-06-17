@@ -33,7 +33,7 @@ def compute_h_loss(explanation_list, shap=False):
                 features_sum[i] += e[i]
             else:
                 features_sum[i] += e[i][1]
-    avg_importance = [feature/n_instances for feature in features_sum]
+    avg_importance = [feature / n_instances for feature in features_sum]
 
     loss = h_score_loss(avg_importance, alpha=0.5)
     return loss
@@ -45,7 +45,7 @@ def save_explanation_to_file(explanation, file_name, folder_name=None):
         base_path = os.path.join(base_path, folder_name)
         if not os.path.exists(base_path):
             os.makedirs(base_path)
-    explanation.save_to_file(os.path.join(base_path, file_name+".html"))
+    explanation.save_to_file(os.path.join(base_path, file_name + ".html"))
 
 
 def tree_global_explanation_static(tree_model):
@@ -136,30 +136,47 @@ def explain_logistic_regression_static(model, feature_names):
     print(df)
 
 
+def lime_explain_instance(instance_features, model, x_stats, feature_names, verbose=False):
+    num_features = len(feature_names)
+    lime_explainer = lime_tabular.LimeTabularExplainer(x_stats, mode="classification",
+                                                       class_names=['Legit', 'Phishing'],
+                                                       feature_names=feature_names, random_state=seed)
+    if hasattr(model, 'predict_proba'):
+        explanation = lime_explainer.explain_instance(instance_features, model.predict_proba, num_features=num_features)
+    else:
+        explanation = lime_explainer.explain_instance(instance_features, model.predict, num_features=num_features)
+    if verbose:
+        print(explanation.as_list())
+    return explanation
+
+
+def shap_explain_instance(instance_features, model, x_training, feature_names, verbose=False):
+    X100 = shap.utils.sample(x_training, 100)
+    explainer = shap.KernelExplainer(model.predict, X100, link='identity')
+    shap_values = explainer.shap_values(X=instance_features, nsamples=100)
+    if verbose:
+        shap.summary_plot(shap_values=shap_values, features=feature_names)
+    return shap_values
+
+
 def lime_explain(model, lime_explainer, x_test, y_test, model_name='lime', start_index=0, end_index=10, show=False,
                  save_file=False, verbose=False):
     warnings.filterwarnings(action='ignore', category=UserWarning)
     explanations = []
     predictions = []
     for i in range(start_index, end_index):
-        instance = x_test.iloc[i]
         real_class = 'Legit (0)' if y_test.iloc[i].item() == 0 else 'Phishing (1)'
         print("Instance " + str(i) + f" - Real class: {real_class}")
-        folder_name = str(i)+"_"+str(y_test.iloc[i].item())
-
         num_features = len(feature_names)
-
         if hasattr(model, 'predict_proba'):
-            explanation = lime_explainer.explain_instance(instance, model.predict_proba,
-                                                          num_features=num_features)
-            prediction = model.predict_proba(instance.values.astype(int).reshape(1, -1))
+            prediction = model.predict_proba(x_test.iloc[i].values.astype(int).reshape(1, -1))
+            explanation = lime_explainer.explain_instance(x_test.iloc[i], model.predict_proba, num_features=num_features)
         else:
-            explanation = lime_explainer.explain_instance(instance, model.predict, num_features=num_features)
-            prediction = model.predict(instance.values.astype(int).reshape(1, -1))
+            prediction = model.predict(x_test.iloc[i].values.astype(int).reshape(1, -1))
+            explanation = lime_explainer.explain_instance(x_test.iloc[i], model.predict, num_features=num_features)
         if verbose:
             print(f"Predictions: Legit = {prediction[0][0]}, Phishing = {prediction[0][1]}")
             print(explanation.as_list())
-
         if show:
             explanation_figure = explanation.as_pyplot_figure()
             explanation_figure.set_size_inches(20, 18)
@@ -167,6 +184,7 @@ def lime_explain(model, lime_explainer, x_test, y_test, model_name='lime', start
             plt.title("Explanation " + model_name)
             plt.show()
         if save_file:
+            folder_name = str(i) + "_" + str(y_test.iloc[i].item())
             save_explanation_to_file(explanation, model_name, folder_name=folder_name)
         explanations.append(explanation.as_list())
         predictions.append(prediction)
@@ -186,7 +204,7 @@ def lime_global_feature_importance_to_file(explanations, feature_names, file_nam
                 top_feature = e[i][0].split(' ')[2]
             feature_presence[top_feature] += 1  # increase the feature by one if it is in the top 3 features
     base_path = os.path.join('output', 'feature_importance', 'lime')
-    file_path = os.path.join(base_path, file_name+'.json')
+    file_path = os.path.join(base_path, file_name + '.json')
     mode = 'w' if os.path.exists(file_path) else 'x'
     with open(file_path, mode) as out:
         out.write(json.dumps(feature_presence))
@@ -214,11 +232,11 @@ def shap_global_feature_importance_to_file(explanations, feature_names, file_nam
             x = x.values
         x = abs(x)
         indexes_sort = np.argsort(x)
-        for i in range(1, n_top_features+1):  # take the top N features
+        for i in range(1, n_top_features + 1):  # take the top N features
             top_feature = feature_names[indexes_sort[-i]]  # the indexes are the feats (-i => arr sort in asc. order)
             feature_presence[top_feature] += 1  # increase the feature by one if it is in the top 3 features
     base_path = os.path.join('output', 'feature_importance', 'shap')
-    file_path = os.path.join(base_path, file_name+'.json')
+    file_path = os.path.join(base_path, file_name + '.json')
     mode = 'w' if os.path.exists(file_path) else 'x'
     with open(file_path, mode) as out:
         out.write(json.dumps(feature_presence))
@@ -262,36 +280,35 @@ if __name__ == "__main__":
         tree_global_feature_importance_to_file(clf=dt_model, x_test=X, feature_names=feature_names,
                                                start_index=start_test, end_index=end_test, n_top_features=3)
         # LIME
-        explanations_dt = lime_explain(dt_model, lime_explainer, X, y, 'dt',
-                                       start_test, end_test, show=False, save_file=False)
-        lime_global_feature_importance_to_file(explanations_dt, feature_names, 'dt')
+        explanations = lime_explain(dt_model, lime_explainer, X, y, 'dt',
+                                    start_test, end_test, show=False, save_file=False)
+        lime_global_feature_importance_to_file(explanations, feature_names, 'dt')
         # SHAP
-        explanations_mlp = shap_explain(dt_model, masker_med, X, print_summary=True, nn=False)
-        shap_global_feature_importance_to_file(explanations_mlp, feature_names, 'dt', nn=False)
+        explanations = shap_explain(dt_model, masker_med, X, print_summary=True, nn=False)
+        shap_global_feature_importance_to_file(explanations, feature_names, 'dt', nn=False)
 
     # LOGISTIC REGRESSION
     if execute_logistic_regression:
         lr_model = load_model('logistic_regression.obj')
         explain_logistic_regression_static(lr_model, feature_names)
         # LIME
-        explanations_lr = lime_explain(lr_model, lime_explainer, X, y, 'lr',
-                                       start_test, end_test, show=False, save_file=False)
-        lime_global_feature_importance_to_file(explanations_lr, feature_names, 'lr')
+        explanations = lime_explain(lr_model, lime_explainer, X, y, 'lr',
+                                    start_test, end_test, show=False, save_file=False)
+        lime_global_feature_importance_to_file(explanations, feature_names, 'lr')
         # SHAP
-        shap_global_feature_importance_to_file(lr_model, masker_med, X, feature_names, 'lr', seed)
-        explanations_mlp = shap_explain(lr_model, masker_med, X, print_summary=True, nn=False)
-        shap_global_feature_importance_to_file(explanations_mlp, feature_names, 'lr', nn=False)
+        explanations = shap_explain(lr_model, masker_med, X, print_summary=True, nn=False)
+        shap_global_feature_importance_to_file(explanations, feature_names, 'lr', nn=False)
 
     # SVM
     if execute_svm:
         svm_model = load_model('svm.obj')
         # LIME
-        explanations_svm = lime_explain(svm_model, lime_explainer, X, y, 'svm',
-                                        start_test, end_test, show=False, save_file=False)
-        lime_global_feature_importance_to_file(explanations_svm, feature_names, 'svm')
+        explanations = lime_explain(svm_model, lime_explainer, X, y, 'svm',
+                                    start_test, end_test, show=False, save_file=False)
+        lime_global_feature_importance_to_file(explanations, feature_names, 'svm')
         # SHAP
-        explanations_mlp = shap_explain(svm_model, masker_med, X, print_summary=True, nn=False)
-        shap_global_feature_importance_to_file(explanations_mlp, feature_names, 'svm', nn=False)
+        explanations = shap_explain(svm_model, masker_med, X, print_summary=True, nn=False)
+        shap_global_feature_importance_to_file(explanations, feature_names, 'svm', nn=False)
 
     # RANDOM FOREST
     if execute_random_forest:
@@ -300,35 +317,35 @@ if __name__ == "__main__":
         explanations = lime_explain(rf_model, lime_explainer, X, y, 'rf',
                                     start_test, end_test, show=False, save_file=False)
         lime_global_feature_importance_to_file(explanations, feature_names, 'rf')
-        h_score = 1/compute_h_loss(explanations)
+        h_score = 1 / compute_h_loss(explanations)
         print(f"H score LIME RF: {h_score}")
         # SHAP
         explanations = shap_explain(rf_model, masker_med, X, print_summary=True, nn=False)
         shap_global_feature_importance_to_file(explanations, feature_names, 'rf', nn=False)
-        h_score = 1/compute_h_loss(explanations.values, shap=True)
+        h_score = 1 / compute_h_loss(explanations.values, shap=True)
         print(f"H score SHAP RF: {h_score}")
 
     # Multi-Layer Perceptron
     if execute_mlp:
         mlp_model = keras.models.load_model('models/mlp')
         # LIME
-        explanations_mlp = lime_explain(mlp_model, lime_explainer, X, y, 'mlp',
-                                        start_test, end_test, show=False, save_file=False)
-        lime_global_feature_importance_to_file(explanations_mlp, feature_names, 'mlp')
+        explanations = lime_explain(mlp_model, lime_explainer, X, y, 'mlp',
+                                    start_test, end_test, show=False, save_file=False)
+        lime_global_feature_importance_to_file(explanations, feature_names, 'mlp')
         # SHAP
-        explanations_mlp = shap_explain(mlp_model, masker_med, X, print_summary=True, nn=True)
-        shap_global_feature_importance_to_file(explanations_mlp, feature_names, 'mlp', nn=True)
+        explanations = shap_explain(mlp_model, masker_med, X, print_summary=True, nn=True)
+        shap_global_feature_importance_to_file(explanations, feature_names, 'mlp', nn=True)
 
     # Deep Neural Network
     if execute_dnn:
         dnn_model = keras.models.load_model('models/dnn')
         # LIME
-        explanations_dnn = lime_explain(dnn_model, lime_explainer, X, y, 'dnn',
-                                        start_test, end_test, show=False, save_file=False)
-        lime_global_feature_importance_to_file(explanations_dnn, feature_names, 'dnn')
+        explanations = lime_explain(dnn_model, lime_explainer, X, y, 'dnn',
+                                    start_test, end_test, show=False, save_file=False)
+        lime_global_feature_importance_to_file(explanations, feature_names, 'dnn')
         # SHAP
-        explanations_mlp = shap_explain(dnn_model, masker_med, X, print_summary=True, nn=True)
-        shap_global_feature_importance_to_file(explanations_mlp, feature_names, 'dnn', nn=True)
+        explanations = shap_explain(dnn_model, masker_med, X, print_summary=True, nn=True)
+        shap_global_feature_importance_to_file(explanations, feature_names, 'dnn', nn=True)
 
     # ---- EBM -----
     if execute_ebm:
