@@ -18,7 +18,7 @@ def extract_features(mail, return_elements=False):
     body = mail["body"]
     # anchors_in_mail = get_anchors(mail)
     # images_in_mail = get_images(mail)
-    links_plain_text = mail["urls"] #  get_links_plain_text(mail)
+    links_plain_text = mail["urls"].split(" ")  #  get_links_plain_text(mail)
     email_is_html = re.match("text/html", mail["headers"]) is not None
 
     if len(links_plain_text) < 1:  # If there's no link in the mail, don't compute the features
@@ -28,6 +28,7 @@ def extract_features(mail, return_elements=False):
     sus_words_body = suspicious_words_body(body)
     special_chars_body = spec_chars_body(body)
     misspelled_words_body = misspelled_words(body)
+    images_in_mail = get_images(body)
 
     url_features = None
     if email_is_html:
@@ -53,13 +54,12 @@ def extract_features(mail, return_elements=False):
     if url_features is not None:
         body_features = {
             "sus_words_body": len(sus_words_body),  # Suspicious Words
-            "img_in_body": False,  # len(images_in_mail) > 0,  # Image Present?
+            "img_in_body": len(images_in_mail) > 0,  # Image Present?
             "special_chars_body": len(special_chars_body),  # Special Characters in body
             "links_present_mail": len(links_plain_text),  # Links Present
             "no_misspelled_words": len(misspelled_words_body)   # Misspelled words
         }
         features = body_features | url_features  # merge the 2 dictionaries
-        
         features["domain_geolocation"] = mail["url_location"]
         if return_elements:
             elements = {
@@ -182,7 +182,7 @@ def get_url_features(link, visible_link="", max_score_phish=0):
     else:  # dummy values
         age_of_domain = 9999999
         expiration = 99999999
-        ranking = 20000
+        ranking = 999999999
 
     score = score + 1 if age_of_domain < 200 else score  # increase score if the domain is less than 200 days old
     score = score + 1 if expiration < 100 else score  # increase score if domain is expiring in less than 100 days

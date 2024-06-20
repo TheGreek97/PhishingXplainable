@@ -170,17 +170,19 @@ if __name__ == '__main__':
     np.random.seed(seed)  # set random state also for sklearn
     tf.random.set_seed(seed)
 
-    execute_decision_tree = False
-    execute_logistic_regression = False
-    execute_svm = False
-    execute_random_forest = False
-    execute_ebm = False
+    execute_decision_tree = True
+    execute_logistic_regression = True
+    execute_svm = True
+    execute_random_forest = True
+    execute_ebm = True
     execute_mlp = True
     execute_dnn = True
 
     # LOAD THE DATA
-    X, y, feature_names = load_data_no_split()
-    X_train, y_train, _, _, _ = load_data(0.2, seed)  # Single split if we need it
+    # datasets = [os.path.join('datasets', 'features', 'enron'), os.path.join('datasets', 'features', 'spam_assassin')]
+    datasets = [os.path.join('datasets', 'features', 'legit'), os.path.join('datasets', 'features', 'phishing')]
+    X, y, feature_names = load_data_no_split(datasets)
+    X_train, y_train, _, _, _ = load_data(datasets, 0.2, seed)  # Single split if we need it
 
     n_folds = 5
     cv_outer = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
@@ -195,7 +197,8 @@ if __name__ == '__main__':
             'max_depth': [8]
         }
         # best_params_dt = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
-        best_params_dt = {'ccp_alpha': 0.0, 'criterion': 'entropy', 'max_depth': 8, 'min_samples_leaf': 7}
+        # best_params_dt = {'ccp_alpha': 0.0, 'criterion': 'entropy', 'max_depth': 8, 'min_samples_leaf': 7}
+        best_params_dt = {'ccp_alpha': 0.0, 'criterion': 'gini', 'max_depth': 8, 'min_samples_leaf': 7}  # new dataset
         dt_model = model.set_params(**best_params_dt)
         # Evaluate
         metrics_dt = test_model_cv(dt_model, X, y, cv_outer, print_=False, name='DT')
@@ -214,7 +217,8 @@ if __name__ == '__main__':
             'penalty': ['l2']
         }
         # best_params_lr = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
-        best_params_lr = {'C': 100, 'penalty': 'l2', 'solver': 'lbfgs'}
+        # best_params_lr = {'C': 100, 'penalty': 'l2', 'solver': 'lbfgs'}
+        best_params_lr = {'C': 100, 'penalty': 'l2', 'solver': 'newton-cg'}  # new dataset
         lr_model = model.set_params(**best_params_lr)
         # Evaluate
         metrics_lr = test_model_cv(lr_model, X, y, cv_outer, print_=False, name='LR')
@@ -228,11 +232,11 @@ if __name__ == '__main__':
         space = {
             'C': [1, 10, 100],
             'gamma': [1, 0.1, 0.01],
-            'degree': [3, 5, 7],
+            'degree': [3, 5],
             'kernel': ['poly']
         }
-        # best_params_svm = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
-        best_params_svm = {'C': 100, 'degree': 3, 'gamma': 0.1, 'kernel': 'poly'}
+        best_params_svm = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
+        # best_params_svm = {'C': 100, 'degree': 3, 'gamma': 0.1, 'kernel': 'poly'}
 
         svm_model = model.set_params(**best_params_svm)
         svm_model.fit(X, y.values.ravel())  # Fit the final model on the whole dataset
@@ -251,8 +255,8 @@ if __name__ == '__main__':
             'max_features': [5, 10, 14, 18],
             'max_samples': [0.1, 0.25, 0.5]
         }
-        # best_params_rf = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
-        best_params_rf = {'max_features': 5, 'max_samples': 0.5, 'n_estimators': 50}
+        best_params_rf = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
+        # best_params_rf = {'max_features': 5, 'max_samples': 0.5, 'n_estimators': 50}
         rf_model = model.set_params(**best_params_rf)
         metrics_rf = test_model_cv(rf_model, X, y, cv_outer, print_=False, name='RF')
         print("RF:", metrics_rf)

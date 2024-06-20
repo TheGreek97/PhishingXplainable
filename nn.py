@@ -4,12 +4,17 @@ from sklearn.model_selection import StratifiedKFold
 from tensorflow import keras
 import keras.backend as K
 from keras import layers
+
+import nn
 from util import h_score_loss
 from keras import callbacks
 from keras.utils import np_utils
 import keras_tuner as kt
 from sklearn.inspection import permutation_importance
 from sklearn.preprocessing import MinMaxScaler
+
+
+INPUT_SIZE = 18
 
 
 def custom_loss():
@@ -70,7 +75,7 @@ def deep_model_builder(hp):
     """
     # Initialize the Sequential API and start stacking the layers
     model = keras.Sequential()
-    model.add(keras.layers.Input(shape=(18,)))
+    model.add(keras.layers.Input(shape=(INPUT_SIZE,)))
     model.add(layers.Normalization(axis=None))
     # Tune the number of units in the first Dense layer
 
@@ -118,6 +123,7 @@ def fit_model(model, X, y, class_weight):
 
 def get_optimal_net(X, y, n_fold=5, seed=0, deep=False, verbose=0):
     # Instantiate the tuner
+    nn.INPUT_SIZE = len(X.iloc[0].columns)  # set the input size = number of features
     cv = StratifiedKFold(n_splits=n_fold, shuffle=True, random_state=seed)
     best_model = None
     best_score = 1
