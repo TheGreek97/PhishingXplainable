@@ -43,7 +43,7 @@ def mlp_model_builder(hp):
     # Initialize the Sequential API and start stacking the layers
     model = keras.Sequential()
     # Input layer
-    model.add(layers.Input(shape=(18,)))
+    model.add(layers.Input(shape=(INPUT_SIZE,)))
     model.add(layers.Normalization(axis=None))
     # Layer 1
     model.add(
@@ -123,7 +123,7 @@ def fit_model(model, X, y, class_weight):
 
 def get_optimal_net(X, y, n_fold=5, seed=0, deep=False, verbose=0):
     # Instantiate the tuner
-    nn.INPUT_SIZE = len(X.iloc[0].columns)  # set the input size = number of features
+    nn.INPUT_SIZE = len(X.columns)  # set the input size = number of features
     cv = StratifiedKFold(n_splits=n_fold, shuffle=True, random_state=seed)
     best_model = None
     best_score = 1
@@ -140,7 +140,7 @@ def get_optimal_net(X, y, n_fold=5, seed=0, deep=False, verbose=0):
         model_builder = deep_model_builder if deep else mlp_model_builder
         tuner = kt.RandomSearch(model_builder,  # the hyper-model
                                 objective=kt.Objective('val_loss', 'min'),  # objective to optimize
-                                max_trials=10,
+                                max_trials=100,
                                 executions_per_trial=5,
                                 directory='logs',  # directory to save logs
                                 project_name=folder_name,

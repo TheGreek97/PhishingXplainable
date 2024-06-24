@@ -27,6 +27,14 @@ import nn
 from data import load_data, load_data_no_split
 from util import custom_score
 
+execute_decision_tree = False
+execute_logistic_regression = False
+execute_svm = False
+execute_random_forest = False
+execute_ebm = False
+execute_mlp = True
+execute_dnn = False
+
 
 def showTree(model, feature_names):
     plt.figure(figsize=(200, 20))
@@ -170,21 +178,13 @@ if __name__ == '__main__':
     np.random.seed(seed)  # set random state also for sklearn
     tf.random.set_seed(seed)
 
-    execute_decision_tree = True
-    execute_logistic_regression = True
-    execute_svm = True
-    execute_random_forest = True
-    execute_ebm = True
-    execute_mlp = True
-    execute_dnn = True
-
     # LOAD THE DATA
     # datasets = [os.path.join('datasets', 'features', 'enron'), os.path.join('datasets', 'features', 'spam_assassin')]
     datasets = [os.path.join('datasets', 'features', 'legit'), os.path.join('datasets', 'features', 'phishing')]
     X, y, feature_names = load_data_no_split(datasets)
     X_train, y_train, _, _, _ = load_data(datasets, 0.2, seed)  # Single split if we need it
 
-    n_folds = 5
+    n_folds = 10
     cv_outer = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
 
     # --- DECISION TREE ----
@@ -230,22 +230,20 @@ if __name__ == '__main__':
     if execute_svm:
         model = svm.SVC(probability=True, random_state=seed)
         space = {
-            'C': [1, 10, 100],
+            'C': [1, 10, 25],
             'gamma': [1, 0.1, 0.01],
             'degree': [3, 5],
             'kernel': ['poly']
         }
-        best_params_svm = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
+        # best_params_svm = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
         # best_params_svm = {'C': 100, 'degree': 3, 'gamma': 0.1, 'kernel': 'poly'}
-
+        best_params_svm = {'C': 25, 'degree': 5, 'gamma': 1, 'kernel': 'poly'}  # new dataset
         svm_model = model.set_params(**best_params_svm)
-        svm_model.fit(X, y.values.ravel())  # Fit the final model on the whole dataset
-        svm_model = make_pipeline(StandardScaler(), svm_model)
 
         metrics_svm = test_model_cv(svm_model, X, y, cv_outer, print_=False, name='SVM')
         print("SVM:", metrics_svm)
-
-        saveModel(svm_model, 'svm')
+        # svm_model.fit(X, y)  # Fit the final model on the whole dataset
+        # saveModel(svm_model, 'svm')
 
     # --- Random Forest ----
     if execute_random_forest:
@@ -255,8 +253,9 @@ if __name__ == '__main__':
             'max_features': [5, 10, 14, 18],
             'max_samples': [0.1, 0.25, 0.5]
         }
-        best_params_rf = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
+        # best_params_rf = computeBestModelConfig(X_train, y_train, model=model, param_space=space, seed=seed)
         # best_params_rf = {'max_features': 5, 'max_samples': 0.5, 'n_estimators': 50}
+        best_params_rf = {'max_features': 5, 'max_samples': 0.5, 'n_estimators': 100}  # new dataset
         rf_model = model.set_params(**best_params_rf)
         metrics_rf = test_model_cv(rf_model, X, y, cv_outer, print_=False, name='RF')
         print("RF:", metrics_rf)
@@ -270,7 +269,7 @@ if __name__ == '__main__':
         for train_ix, test_ix in test_cv_ixs:
             x_train_, y_train_ = X.iloc[train_ix], y.iloc[train_ix]
             x_test_, y_test_ = X.iloc[test_ix], y.iloc[test_ix]
-            ebm_model = ExplainableBoostingClassifier(feature_names=feature_names, random_state=seed,
+            ebm_model = ExplainableBoostingClassifier(random_state=seed,
                                                       validation_size=0.2)
             ebm_model.fit(x_train_, y_train_)
             """
@@ -294,7 +293,7 @@ if __name__ == '__main__':
     # --- Multi-Layer Perceptron ----
     if execute_mlp:
         mlp_model = nn.get_optimal_net(X_train, y_train, n_folds, seed=42, deep=False)
-        class_weights_mlp = {0: 1, 1: 2}
+        class_weights_mlp = {0: 1, 1: 1}
         test_cv_ixs = cv_outer.split(X, y)
         metrics_mlp = test_nn_cv(mlp_model, X_nn, y_nn, test_cv_ixs,  print_=True, name='MLP')
         print("DNN:", mlp_model.summary())
