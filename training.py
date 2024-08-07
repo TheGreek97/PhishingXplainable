@@ -4,6 +4,7 @@ import numpy as np
 import os.path
 import pickle
 import matplotlib.pyplot as plt
+import pandas as pd
 
 import sklearn.tree as tree
 import sklearn.svm as svm
@@ -32,8 +33,8 @@ execute_logistic_regression = False
 execute_svm = False
 execute_random_forest = False
 execute_ebm = False
-execute_mlp = True
-execute_dnn = False
+execute_mlp = False
+execute_dnn = True
 
 
 def showTree(model, feature_names):
@@ -149,12 +150,14 @@ def saveModel(model, file_name):
         pickle.dump(model, write_file)
 
 
-def test_nn_cv(nn_model, X, y, split_ixs, class_weight=None, print_=False, name='Results'):
+def test_nn_cv(nn_model: keras.Sequential, X: pd.DataFrame, y: pd.DataFrame, split_ixs, class_weight=None,
+               print_=False, name='Results'):
     metrics = []
     for train_ix, test_ix in split_ixs:
         x_train_nn, x_test_nn = X[train_ix, :], X[test_ix, :]
         y_train_nn, y_test_nn = y[train_ix], y[test_ix]
         model = keras.models.clone_model(nn_model)
+        model.compile(loss='binary_crossentropy')
         if class_weight is None:
             class_weight = {0: 1, 1: 1}
         model = nn.fit_model(model, x_train_nn, y_train_nn, class_weight)
@@ -182,7 +185,6 @@ if __name__ == '__main__':
     # datasets = [os.path.join('datasets', 'features', 'enron'), os.path.join('datasets', 'features', 'spam_assassin')]
     datasets = [os.path.join('datasets', 'features', 'legit'), os.path.join('datasets', 'features', 'phishing')]
     X, y, feature_names = load_data_no_split(datasets)
-    X_train, y_train, _, _, _ = load_data(datasets, 0.2, seed)  # Single split if we need it
 
     n_folds = 10
     cv_outer = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
@@ -288,15 +290,17 @@ if __name__ == '__main__':
         # saveModel(ebm_model, 'ebm')
 
     # # Neural Networks
+    X_train, y_train, X_test, y_test, _ = load_data(datasets, 0.2, seed)  # Single split if we need it
     X_train_nn, y_train_nn = nn.format_x_data(X_train), nn.format_y_data(y_train)
+    X_test_nn, y_test_nn = nn.format_x_data(X_test), nn.format_y_data(y_test)
     X_nn, y_nn = nn.format_x_data(X), nn.format_y_data(y)
     # --- Multi-Layer Perceptron ----
     if execute_mlp:
-        mlp_model = nn.get_optimal_net(X_train, y_train, n_folds, seed=42, deep=False)
+        mlp_model, _ = nn.build_optimal_nn(X_train, X_test_nn, y_train_nn, y_test_nn, seed=42, deep=False)
         class_weights_mlp = {0: 1, 1: 1}
         test_cv_ixs = cv_outer.split(X, y)
         metrics_mlp = test_nn_cv(mlp_model, X_nn, y_nn, test_cv_ixs,  print_=True, name='MLP')
-        print("DNN:", mlp_model.summary())
+        print("MLP:", mlp_model.summary())
         print("Metrics:", metrics_mlp)
         # Fit to the whole dataset
         mlp_model = nn.fit_model(mlp_model, X_nn, y_nn, class_weights_mlp)
@@ -304,7 +308,7 @@ if __name__ == '__main__':
 
     # --- Deep Neural Network ----
     if execute_dnn:
-        dnn_model = nn.get_optimal_net(X_train, y_train, n_folds, seed=42, deep=True)
+        dnn_model, _ = nn.build_optimal_nn(X_train, X_test_nn, y_train, y_test_nn, seed=42, deep=True)
         class_weights_dnn = {0: 1, 1: 2}
         test_cv_ixs = cv_outer.split(X, y)
         metrics_dnn = test_nn_cv(dnn_model, X_nn, y_nn, test_cv_ixs, class_weight=class_weights_dnn, print_=True, name='DNN')
